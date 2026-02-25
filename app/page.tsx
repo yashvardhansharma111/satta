@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect, useState } from 'react';
 
 type RowData = {
   dateRange: {
@@ -8,14 +8,24 @@ type RowData = {
     end: string;
   };
   jodiNumbers: Array<{
-    topDigits: [number, number, number];
-    main: number;
-    bottomDigits: [number, number, number];
+    topDigits: [string, string, string];
+    main: string;
+    bottomDigits: [string, string, string];
     isRed: boolean;
   }>;
 };
 
-// Seeded random number generator for deterministic output
+type ApiRow = {
+  startDate: string;
+  endDate: string;
+  cells: Array<{
+    topDigits: [string, string, string];
+    main: string;
+    bottomDigits: [string, string, string];
+    isRed: boolean;
+  }>;
+};
+
 function seededRandom(seed: number): number {
   const x = Math.sin(seed) * 10000;
   return x - Math.floor(x);
@@ -24,7 +34,7 @@ function seededRandom(seed: number): number {
 function generateSampleData(): RowData[] {
   const rows: RowData[] = [];
   const startDate = new Date('2019-03-18');
-  let seed = 42; // Start with a fixed seed
+  let seed = 42;
 
   for (let i = 0; i < 10; i++) {
     const weekStart = new Date(startDate);
@@ -33,28 +43,28 @@ function generateSampleData(): RowData[] {
     weekEnd.setDate(weekEnd.getDate() + 6);
 
     const formatDate = (d: Date) =>
-      `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+      `${String(d.getDate()).padStart(2, '0')}/${String(
+        d.getMonth() + 1
+      ).padStart(2, '0')}/${d.getFullYear()}`;
 
     const jodiNumbers = Array.from({ length: 7 }, () => {
       const topD = [
-        Math.floor(seededRandom(seed++) * 10),
-        Math.floor(seededRandom(seed++) * 10),
-        Math.floor(seededRandom(seed++) * 10),
-      ] as [number, number, number];
-      const main = Math.floor(seededRandom(seed++) * 100);
+        String(Math.floor(seededRandom(seed++) * 10)),
+        String(Math.floor(seededRandom(seed++) * 10)),
+        String(Math.floor(seededRandom(seed++) * 10)),
+      ] as [string, string, string];
+
+      const main = String(Math.floor(seededRandom(seed++) * 100)).padStart(2, '0');
+
       const bottomD = [
-        Math.floor(seededRandom(seed++) * 10),
-        Math.floor(seededRandom(seed++) * 10),
-        Math.floor(seededRandom(seed++) * 10),
-      ] as [number, number, number];
+        String(Math.floor(seededRandom(seed++) * 10)),
+        String(Math.floor(seededRandom(seed++) * 10)),
+        String(Math.floor(seededRandom(seed++) * 10)),
+      ] as [string, string, string];
+
       const isRed = seededRandom(seed++) > 0.6;
 
-      return {
-        topDigits: topD,
-        main,
-        bottomDigits: bottomD,
-        isRed,
-      };
+      return { topDigits: topD, main, bottomDigits: bottomD, isRed };
     });
 
     rows.push({
@@ -71,7 +81,71 @@ function generateSampleData(): RowData[] {
 
 export default function SattaMatkaPanalChart() {
   const chartRef = useRef<HTMLDivElement>(null);
-  const data = useMemo(() => generateSampleData(), []);
+  const topRef = useRef<HTMLDivElement>(null);
+  const [data, setData] = useState<RowData[]>([]);
+
+  const formatDate = useMemo(
+    () =>
+      (d: Date) =>
+        `${String(d.getUTCDate()).padStart(2, '0')}/${String(
+          d.getUTCMonth() + 1
+        ).padStart(2, '0')}/${d.getUTCFullYear()}`,
+    []
+  );
+
+  const formatMain = useMemo(
+    () =>
+      (value: string) => {
+        const v = value.trim();
+        if (/^\d$/.test(v)) return `0${v}`;
+        if (/^\d{2}$/.test(v)) return v;
+        return v;
+      },
+    []
+  );
+
+  useEffect(() => {
+    let alive = true;
+
+    const fetchRows = async () => {
+      try {
+        const res = await fetch('/api/chart-rows?limit=2000&sort=desc', {
+          cache: 'no-store',
+        });
+        const json = (await res.json()) as { rows?: ApiRow[]; error?: string };
+        if (!res.ok) throw new Error(json.error || 'Failed to load');
+        const rows = (json.rows ?? []).map((r) => {
+          const start = new Date(r.startDate);
+          const end = new Date(r.endDate);
+
+          return {
+            dateRange: {
+              start: formatDate(start),
+              end: formatDate(end),
+            },
+            jodiNumbers: (r.cells ?? []).slice(0, 7).map((c) => ({
+              topDigits: c.topDigits,
+              main: c.main,
+              bottomDigits: c.bottomDigits,
+              isRed: c.isRed,
+            })),
+          } satisfies RowData;
+        });
+
+        if (alive) setData(rows);
+      } catch {
+        if (alive) setData(generateSampleData() as unknown as RowData[]);
+      }
+    };
+
+    fetchRows();
+    const id = window.setInterval(fetchRows, 5000);
+
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [formatDate]);
 
   const scrollToBottom = () => {
     if (chartRef.current) {
@@ -79,120 +153,262 @@ export default function SattaMatkaPanalChart() {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-start py-8 px-4">
-      {/* Go to Bottom Button */}
-      <button
-        onClick={scrollToBottom}
-        className="mb-8 px-8 py-3 bg-yellow-300 text-red-600 font-bold text-lg rounded-lg shadow-md hover:shadow-lg transition-shadow"
-        style={{ fontFamily: '"Old Standard TT", Georgia, serif' }}
-      >
-        Go to Bottom
-      </button>
+  const scrollToTop = () => {
+    if (topRef.current) {
+      topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
-      {/* Chart Container */}
-      <div
-        ref={chartRef}
-        className="w-full max-w-6xl"
-        style={{
-          border: '4px solid #7b2cbf',
-          backgroundColor: '#f5f5f5',
-          boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.05)',
-          padding: '0',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Chart Rows */}
-        <div>
+  return (
+    <div ref={topRef} className="min-h-screen bg-black flex flex-col items-center">
+      {/* Red line above header */}
+      <div style={{
+        width: '100%',
+        height: '3px',
+        backgroundColor: '#FF0000',
+      }}></div>
+
+      {/* Blue Header with title */}
+      <div style={{
+        width: '100%',
+        backgroundColor: '#00008B',
+        padding: '12px 0',
+        textAlign: 'center',
+      }}>
+        <h1 style={{
+          color: '#FF0000',
+          fontSize: '36px',
+          fontWeight: 'bold',
+          fontStyle: 'italic',
+          margin: 0,
+          fontFamily: 'serif',
+          letterSpacing: '2px',
+        }}>
+          KBC BOMBAY PENAL CHART
+        </h1>
+      </div>
+
+      {/* Double red lines */}
+      <div style={{
+        width: '100%',
+        height: '2px',
+        backgroundColor: '#FF0000',
+      }}></div>
+      <div style={{
+        width: '100%',
+        height: '2px',
+        backgroundColor: '#FF0000',
+        marginTop: '2px',
+      }}></div>
+
+      {/* Blue Subtitle section */}
+      <div style={{
+        width: '100%',
+        backgroundColor: '#00008B',
+        padding: '8px 0',
+        textAlign: 'center',
+      }}>
+        <h2 style={{
+          color: '#FFFFFF',
+          fontSize: '20px',
+          fontWeight: 'bold',
+          fontStyle: 'italic',
+          margin: '0 0 5px 0',
+          fontFamily: 'serif',
+        }}>
+          Kbc Bombay Penal Patti Chart
+        </h2>
+        <p style={{
+          color: '#FFFFFF',
+          fontSize: '11px',
+          margin: 0,
+          fontFamily: 'serif',
+        }}>
+          kbc bombay penal chart, kbc bombay jodi patti record chart, kbc bombay satta penal chart com, bombay kbc day satta penal with chart, panel chart for kbc bombay matka, kbc bombay satta bazar panel chart
+        </p>
+      </div>
+
+      {/* Red line below subtitle */}
+      <div style={{
+        width: '100%',
+        height: '3px',
+        backgroundColor: '#FF0000',
+      }}></div>
+
+      {/* Yellow Info Box */}
+      <div style={{
+        width: '100%',
+        backgroundColor: '#FFFF00',
+        padding: '15px 0',
+        textAlign: 'center',
+      }}>
+        <h3 style={{
+          color: '#0000FF',
+          fontSize: '28px',
+          fontWeight: 'bold',
+          fontStyle: 'italic',
+          margin: '0 0 3px 0',
+          fontFamily: 'serif',
+        }}>
+          KBC BOMBAY
+        </h3>
+        <p style={{
+          color: '#000000',
+          fontSize: '24px',
+          fontWeight: 'bold',
+          margin: '0 0 8px 0',
+          fontFamily: 'serif',
+        }}>
+          466-62-660
+        </p>
+        <button style={{
+          backgroundColor: '#D4AF37',
+          border: '2px solid #000000',
+          borderRadius: '25px',
+          padding: '6px 20px',
+          fontSize: '16px',
+          fontWeight: 'bold',
+          fontStyle: 'italic',
+          color: '#8B0000',
+          cursor: 'pointer',
+          fontFamily: 'serif',
+        }}>
+          Refresh Result
+        </button>
+      </div>
+
+      {/* Go to Bottom Button */}
+      <div style={{
+        width: '100%',
+        backgroundColor: '#000000',
+        padding: '8px 0',
+        textAlign: 'center',
+      }}>
+        <button
+          onClick={scrollToBottom}
+          style={{
+            backgroundColor: '#FFFF00',
+            border: '2px solid #000000',
+            borderRadius: '8px',
+            padding: '6px 20px',
+            fontSize: '16px',
+            fontWeight: 'bold',
+            color: '#FF0000',
+            cursor: 'pointer',
+            fontFamily: 'serif',
+          }}
+        >
+          Go to Bottom
+        </button>
+      </div>
+
+      {/* Chart Table */}
+      <div style={{ paddingTop: '20px', width: '100%', display: 'flex', justifyContent: 'center' }}>
+        <div
+          ref={chartRef}
+          style={{
+            width: '45%',
+            border: '3px solid #7b2cbf',
+            backgroundColor: '#e6e6e6',
+            maxHeight: '75vh',
+            overflowY: 'auto',
+          }}
+        >
           {data.map((row, rowIndex) => (
             <div
               key={rowIndex}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '120px repeat(7, 1fr)',
-                borderBottom: rowIndex < data.length - 1 ? '1px solid rgba(0,0,0,0.2)' : 'none',
+                gridTemplateColumns: '90px repeat(7, 1fr)',
+                borderBottom:
+                  rowIndex < data.length - 1
+                    ? '1px solid rgba(0,0,0,0.35)'
+                    : 'none',
               }}
             >
-              {/* Date Column */}
+              {/* Date */}
               <div
                 style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '4px 6px',
+                  padding: '3px',
+                  textAlign: 'center',
                   fontFamily: '"Times New Roman", serif',
-                  fontSize: '10px',
+                  fontSize: '11px',
                   fontWeight: 'bold',
                   color: '#000',
                 }}
               >
-                <div style={{ textAlign: 'center', lineHeight: '1.1' }}>{row.dateRange.start}</div>
-                <div style={{ fontSize: '8px', margin: '1px 0' }}>to</div>
-                <div style={{ textAlign: 'center', lineHeight: '1.1' }}>{row.dateRange.end}</div>
+                <div>{row.dateRange.start}</div>
+                <div style={{ fontSize: '9px' }}>to</div>
+                <div>{row.dateRange.end}</div>
               </div>
 
-              {/* Jodi Number Blocks */}
-              {row.jodiNumbers.map((jodi, jodiIndex) => (
+              {row.jodiNumbers.map((jodi, index) => (
+                <div
+                  key={index}
+                  style={{
+                    position: 'relative',
+                    height: '60px',
+                    fontFamily: '"Times New Roman", serif',
+                  }}
+                >
+                  {/* LEFT DIGITS */}
                   <div
-                    key={jodiIndex}
                     style={{
+                      position: 'absolute',
+                      left: '6px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '4px 6px',
-                      fontFamily: '"Times New Roman", serif',
-                      minWidth: 0,
-                    }}
-                  >
-                  {/* Top tiny digits */}
-                  <div
-                    style={{
-                      fontSize: '8px',
+                      fontSize: '11px',
                       fontWeight: 'bold',
-                      color: '#000',
-                      letterSpacing: '1px',
                       lineHeight: '1',
-                      margin: '0',
-                      padding: '0',
-                      textAlign: 'center',
-                      marginBottom: '2px',
+                      color: '#000',
+                      opacity: 1,
                     }}
                   >
-                    {jodi.topDigits[0]} {jodi.topDigits[1]} {jodi.topDigits[2]}
+                    {jodi.topDigits.map((d, i) => (
+                      <span key={i}>{d}</span>
+                    ))}
                   </div>
 
-                  {/* Main jodi number */}
+                  {/* MAIN NUMBER */}
                   <div
                     style={{
-                      fontSize: '38px',
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      fontSize: '28px',
                       fontWeight: 700,
                       fontStyle: 'italic',
                       color: jodi.isRed ? '#c00000' : '#000',
-                      lineHeight: '1',
-                      textAlign: 'center',
-                      letterSpacing: '-0.5px',
                     }}
                   >
-                    {String(jodi.main).padStart(2, '0')}
+                    {formatMain(jodi.main)}
                   </div>
 
-                  {/* Bottom tiny digits */}
+                  {/* RIGHT DIGITS */}
                   <div
                     style={{
-                      fontSize: '8px',
+                      position: 'absolute',
+                      right: '6px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      fontSize: '11px',
                       fontWeight: 'bold',
-                      color: '#000',
-                      letterSpacing: '1px',
                       lineHeight: '1',
-                      margin: '0',
-                      padding: '0',
-                      textAlign: 'center',
-                      marginTop: '2px',
+                      color: '#000',
+                      opacity: 1,
                     }}
                   >
-                    {jodi.bottomDigits[0]} {jodi.bottomDigits[1]} {jodi.bottomDigits[2]}
+                    {jodi.bottomDigits.map((d, i) => (
+                      <span key={i}>{d}</span>
+                    ))}
                   </div>
                 </div>
               ))}
@@ -201,8 +417,289 @@ export default function SattaMatkaPanalChart() {
         </div>
       </div>
 
-      {/* Bottom spacing */}
-      <div className="mt-12" />
+      {/* Go to Top Button */}
+      <div style={{
+        width: '100%',
+        backgroundColor: '#000000',
+        padding: '8px 0',
+        marginTop: '20px',
+        textAlign: 'center',
+      }}>
+        <button
+          onClick={scrollToTop}
+          style={{
+            backgroundColor: '#FFFF00',
+            border: '2px solid #000000',
+            borderRadius: '8px',
+            padding: '6px 20px',
+            fontSize: '16px',
+            fontWeight: 'bold',
+            color: '#FF0000',
+            cursor: 'pointer',
+            fontFamily: 'serif',
+          }}
+        >
+          Go to Top
+        </button>
+      </div>
+
+      {/* Yellow Section */}
+      <div style={{
+        width: '100%',
+        backgroundColor: '#FFFF00',
+        border: '3px solid #000000',
+        borderBottom: 'none',
+        padding: '15px 0',
+        textAlign: 'center',
+      }}>
+        <h3 style={{
+          color: '#0000FF',
+          fontSize: '28px',
+          fontWeight: 'bold',
+          fontStyle: 'italic',
+          margin: '0 0 3px 0',
+          fontFamily: 'serif',
+        }}>
+          KBC BOMBAY
+        </h3>
+        <p style={{
+          color: '#000000',
+          fontSize: '24px',
+          fontWeight: 'bold',
+          margin: '0 0 8px 0',
+          fontFamily: 'serif',
+        }}>
+          466-62-660
+        </p>
+        <button style={{
+          backgroundColor: '#D4AF37',
+          border: '2px solid #000000',
+          borderRadius: '25px',
+          padding: '6px 20px',
+          fontSize: '16px',
+          fontWeight: 'bold',
+          fontStyle: 'italic',
+          color: '#8B0000',
+          cursor: 'pointer',
+          fontFamily: 'serif',
+        }}>
+          Refresh Result
+        </button>
+      </div>
+
+      {/* Pink Section - Online Matka Play */}
+      <div style={{
+        width: '100%',
+        backgroundColor: '#FF1493',
+        border: '3px solid #000000',
+        borderTop: 'none',
+        borderBottom: 'none',
+        padding: '15px 0',
+        textAlign: 'center',
+      }}>
+        <p style={{
+          color: '#FFFFFF',
+          fontSize: '18px',
+          fontWeight: 'bold',
+          margin: '0 0 5px 0',
+          fontFamily: 'serif',
+        }}>
+          अब सभी मटका बाजार खेलो ऑनलाइन ऐप पर
+        </p>
+        <p style={{
+          color: '#FFFFFF',
+          fontSize: '18px',
+          fontWeight: 'bold',
+          margin: '0 0 10px 0',
+          fontFamily: 'serif',
+        }}>
+          रोज खेलो रोज कमाओ अभी डाउनलोड करो
+        </p>
+        <button style={{
+          backgroundColor: '#FFD700',
+          border: '2px solid #000000',
+          borderRadius: '25px',
+          padding: '10px 25px',
+          fontSize: '18px',
+          fontWeight: 'bold',
+          fontStyle: 'italic',
+          color: '#000000',
+          cursor: 'pointer',
+          fontFamily: 'serif',
+          marginBottom: '8px',
+        }}>
+          Online Matka Play<br/>(Direct)
+        </button>
+        <p style={{
+          color: '#FFFF00',
+          fontSize: '16px',
+          fontWeight: 'bold',
+          fontStyle: 'italic',
+          margin: '5px 0 0 0',
+          fontFamily: 'serif',
+        }}>
+          ~ Kalyan Official App ~
+        </p>
+        <p style={{
+          color: '#FFFF00',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          margin: '2px 0 0 0',
+          fontFamily: 'serif',
+        }}>
+          Super Fast deposit and withdrawal
+        </p>
+      </div>
+
+      {/* White Section - Booking Info */}
+      <div style={{
+        width: '100%',
+        backgroundColor: '#FFFFFF',
+        border: '3px solid #FF1493',
+        padding: '15px 20px',
+        textAlign: 'center',
+      }}>
+        <h4 style={{
+          color: '#FF0000',
+          fontSize: '20px',
+          fontWeight: 'bold',
+          margin: '0 0 10px 0',
+          fontFamily: 'serif',
+        }}>
+          [ फ्री बुकिंग चालू | बुकिंग चालू फ्री ]
+        </h4>
+        <p style={{
+          color: '#000000',
+          fontSize: '16px',
+          fontWeight: 'bold',
+          margin: '0 0 10px 0',
+          fontFamily: 'serif',
+          fontStyle: 'italic',
+        }}>
+          कल्याण बाजार बम्बर धमाका अचूक जोड़ी पर कमाओ लाखों 100% फिक्स। जोड़ी। पत्ती सिर्फ एक दिन में पूरा लॉस कवर होगा मनी बैक गारंटी एडवांस चार्ज 2500/- मात्र
+        </p>
+        <p style={{
+          color: '#0000FF',
+          fontSize: '18px',
+          fontWeight: 'bold',
+          margin: '5px 0',
+          fontFamily: 'serif',
+        }}>
+          कॉल : 07726928384
+        </p>
+        <p style={{
+          color: '#0000FF',
+          fontSize: '18px',
+          fontWeight: 'bold',
+          margin: '5px 0',
+          fontFamily: 'serif',
+        }}>
+          कॉल : 07726928384
+        </p>
+        <hr style={{ border: '1px solid #ccc', margin: '15px 0' }} />
+        <p style={{
+          color: '#000000',
+          fontSize: '16px',
+          margin: '10px 0',
+          fontFamily: 'serif',
+        }}>
+          <span style={{ color: '#FF0000', fontWeight: 'bold', fontStyle: 'italic' }}>Note :-</span>{' '}
+          <span style={{ fontWeight: 'bold', fontStyle: 'italic' }}>Don't Call For Trail Help</span>
+        </p>
+      </div>
+
+      {/* Yellow Footer Navigation */}
+      <div style={{
+        width: '100%',
+        backgroundColor: '#FFFF00',
+        border: '3px solid #000000',
+        borderTop: 'none',
+        borderBottom: 'none',
+        padding: '10px 0',
+        textAlign: 'center',
+      }}>
+        <p style={{
+          color: '#000000',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          margin: 0,
+          fontFamily: 'serif',
+        }}>
+          <span style={{ color: '#FF0000', fontStyle: 'italic' }}>Back</span>
+          {' '}|<span style={{ color: '#008000' }}>Home</span>| <span style={{ color: '#FF0000' }}>Matka Guessing</span> |
+          <span style={{ color: '#FF8C00' }}>Matka Chart</span> |<span style={{ color: '#0000FF' }}>Matka Play</span> |
+          <span style={{ color: '#8B4513' }}>Tara Matka</span> |<span style={{ color: '#0000FF' }}>Indian Matka</span> |
+          <span style={{ color: '#FF8C00' }}>Fix Matka</span> |<span style={{ color: '#FF0000' }}>Sitemap</span>
+        </p>
+      </div>
+
+      {/* Yellow Footer Info */}
+      <div style={{
+        width: '100%',
+        backgroundColor: '#FFFF00',
+        border: '3px solid #000000',
+        borderTop: 'none',
+        padding: '15px 0 20px 0',
+        textAlign: 'center',
+      }}>
+        <h4 style={{
+          color: '#FF0000',
+          fontSize: '20px',
+          fontWeight: 'bold',
+          fontStyle: 'italic',
+          margin: '0 0 5px 0',
+          fontFamily: 'serif',
+        }}>
+          SattaMatkaDpboss.co
+        </h4>
+        <p style={{
+          color: '#000000',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          margin: '3px 0',
+          fontFamily: 'serif',
+        }}>
+          ALL RIGHTS RESERVED (2012-2024)
+        </p>
+        <p style={{
+          color: '#000000',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          margin: '3px 0',
+          fontFamily: 'serif',
+        }}>
+          SITE OWNER:-
+        </p>
+        <p style={{
+          color: '#000000',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          textDecoration: 'underline',
+          margin: '3px 0',
+          fontFamily: 'serif',
+        }}>
+          PRO. BIG BOSS SIR
+        </p>
+        <p style={{
+          color: '#0000FF',
+          fontSize: '22px',
+          fontWeight: 'bold',
+          margin: '8px 0',
+          fontFamily: 'serif',
+        }}>
+          07726928384
+        </p>
+        <p style={{
+          color: '#000000',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          textDecoration: 'underline',
+          margin: '5px 0',
+          fontFamily: 'serif',
+        }}>
+          https://sattamatkadpboss.co
+        </p>
+      </div>
     </div>
   );
 }
