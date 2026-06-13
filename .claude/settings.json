@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:dpbossss.boston)",
+      "WebFetch(domain:web.archive.org)",
+      "WebFetch(domain:dpbosss.net.in)",
+      "WebFetch(domain:webcache.googleusercontent.com)"
+    ],
+    "additionalDirectories": [
+      "d:\\dpboss"
+    ]
+  }
+}
