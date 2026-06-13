@@ -30,6 +30,11 @@ export async function connectToMongo(): Promise<typeof mongoose> {
   if (!globalCache.promise) {
     globalCache.promise = mongoose.connect(MONGO_URI, {
       bufferCommands: false,
+      serverSelectionTimeoutMS: 10_000,
+    }).catch((err) => {
+      // Reset cache on failure so the next request retries
+      globalCache.promise = null;
+      throw err;
     });
   }
 

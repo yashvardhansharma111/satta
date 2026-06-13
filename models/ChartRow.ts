@@ -8,6 +8,7 @@ export type ChartCell = {
 };
 
 export type ChartRow = {
+  gameId: string;
   startDate: Date;
   endDate: Date;
   cells: ChartCell[];
@@ -39,6 +40,7 @@ const ChartCellSchema = new Schema<ChartCell>(
 
 const ChartRowSchema = new Schema<ChartRow>(
   {
+    gameId: { type: String, required: true, default: 'LAXMI_DAY' },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     cells: {
@@ -52,7 +54,7 @@ const ChartRowSchema = new Schema<ChartRow>(
   { timestamps: true }
 );
 
-ChartRowSchema.index({ startDate: 1, endDate: 1 }, { unique: true });
+ChartRowSchema.index({ gameId: 1, startDate: 1, endDate: 1 }, { unique: true });
 
 export const ChartRowModel =
   (mongoose.models.ChartRow as mongoose.Model<ChartRow>) ||

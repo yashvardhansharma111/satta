@@ -4,10 +4,21 @@
       "WebFetch(domain:dpbossss.boston)",
       "WebFetch(domain:web.archive.org)",
       "WebFetch(domain:dpbosss.net.in)",
-      "WebFetch(domain:webcache.googleusercontent.com)"
+      "WebFetch(domain:webcache.googleusercontent.com)",
+      "Bash(curl -s \"https://api.codehap.com/satta/live/?key=18pcw7mkx91z&limit=3\")",
+      "Bash(curl -s \"https://api.codehap.com/satta/live/?key=18pcw7mkx91z\")",
+      "Bash(curl -s \"https://api.codehap.com/satta/market/?key=18pcw7mkx91z&date=06-2026&ids=GL\")",
+      "Bash(Get-Item \"C:\\\\Users\\\\yashv\\\\.claude\\\\projects\\\\d--dpboss\\\\3724357b-31b6-4cd5-965d-9b1a62bba4d8.jsonl\")",
+      "Bash(Select-Object Length)",
+      "Read(//c/Users/yashv/.claude/projects/d--dpboss/**)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3)",
+      "Read(//c/Users/yashv/AppData/Local/Temp/**)"
     ],
     "additionalDirectories": [
-      "d:\\dpboss"
+      "d:\\dpboss",
+      "d:\\dpboss\\app\\panel",
+      "d:\\dpboss\\app\\jodi"
     ]
   }
 }

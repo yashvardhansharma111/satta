@@ -18,12 +18,14 @@ type NormalizedCell = {
 };
 
 type IncomingRow = {
+  gameId?: string;
   startDate: string;
   endDate: string;
   cells: IncomingCell[];
 };
 
 type NormalizedRow = {
+  gameId: string;
   startDate: string;
   endDate: string;
   cells: NormalizedCell[];
@@ -89,14 +91,15 @@ function validateAndNormalizeRow(row: IncomingRow): NormalizedRow {
     return normalized;
   });
 
-  return { ...row, startDate: row.startDate.trim(), endDate: row.endDate.trim(), cells };
+  const gameId = (row.gameId ?? 'LAXMI_DAY').trim().toUpperCase();
+  return { ...row, gameId, startDate: row.startDate.trim(), endDate: row.endDate.trim(), cells };
 }
 
 export async function POST(req: Request) {
   try {
     await connectToMongo();
 
-    const body = (await req.json()) as { rows: IncomingRow[] };
+    const body = (await req.json()) as { gameId?: string; rows: IncomingRow[] };
     if (!body?.rows || !Array.isArray(body.rows)) {
       throw new Error('Body must be: { rows: IncomingRow[] }');
     }
@@ -105,25 +108,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ upserted: 0 });
     }
 
-    console.log(`[chart-rows/bulk] received rows: ${body.rows.length}`);
+    const defaultGameId = (body.gameId ?? 'LAXMI_DAY').trim().toUpperCase();
+    console.log(`[chart-rows/bulk] received rows: ${body.rows.length}, defaultGameId: ${defaultGameId}`);
 
     const ops = body.rows.map((r, idx) => {
+      // inherit top-level gameId if row doesn't have one
+      const rowWithGameId = { ...r, gameId: r.gameId ?? defaultGameId };
       let normalized: NormalizedRow;
       try {
-        normalized = validateAndNormalizeRow(r);
+        normalized = validateAndNormalizeRow(rowWithGameId);
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Invalid row';
         throw new Error(`Row ${idx + 1}: ${msg}`);
       }
 
       const startDate = parseDate(normalized.startDate);
-      const endDate = parseDate(normalized.endDate);
+      const endDate   = parseDate(normalized.endDate);
 
       return {
         updateOne: {
-          filter: { startDate, endDate },
+          filter: { gameId: normalized.gameId, startDate, endDate },
           update: {
             $set: {
+              gameId: normalized.gameId,
               startDate,
               endDate,
               cells: normalized.cells,
@@ -151,20 +158,7 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Unknown error';
-
-    try {
-      const preview = await req.clone().text();
-      console.error('[chart-rows/bulk] error:', message);
-      console.error('[chart-rows/bulk] request body preview:', preview.slice(0, 2000));
-    } catch {
-      console.error('[chart-rows/bulk] error:', message);
-    }
-
-    return NextResponse.json(
-      {
-        error: message,
-      },
-      { status: 400 }
-    );
+    console.error('[chart-rows/bulk] error:', message);
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

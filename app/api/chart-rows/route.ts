@@ -11,13 +11,13 @@ type IncomingCell = {
 };
 
 type IncomingRow = {
+  gameId?: string;
   startDate: string;
   endDate: string;
   cells: IncomingCell[];
 };
 
 function parseDate(value: string): Date {
-  // Accept ISO or dd/mm/yyyy
   const v = value.trim();
 
   if (/^\d{4}-\d{2}-\d{2}/.test(v)) {
@@ -85,11 +85,26 @@ export async function GET(req: Request) {
     await connectToMongo();
 
     const { searchParams } = new URL(req.url);
-    const limit = Math.min(Number(searchParams.get('limit') ?? '200'), 2000);
-    const skip = Math.max(Number(searchParams.get('skip') ?? '0'), 0);
-    const sort = searchParams.get('sort') === 'asc' ? 1 : -1;
+    const limit  = Math.min(Number(searchParams.get('limit') ?? '200'), 2000);
+    const skip   = Math.max(Number(searchParams.get('skip') ?? '0'), 0);
+    const sort   = searchParams.get('sort') === 'asc' ? 1 : -1;
+    const gameId = searchParams.get('gameId') ?? 'LAXMI_DAY';
 
-    const rows = await ChartRowModel.find({})
+    // year/month filtering for chart pages
+    const year  = searchParams.get('year');
+    const month = searchParams.get('month');
+
+    const filter: Record<string, unknown> = { gameId };
+    if (year && month) {
+      const y = Number(year);
+      const m = Number(month);
+      const from = new Date(Date.UTC(y, m - 1, 1));
+      const to   = new Date(Date.UTC(y, m, 1));
+      filter.startDate = { $lt: to };
+      filter.endDate   = { $gte: from };
+    }
+
+    const rows = await ChartRowModel.find(filter)
       .sort({ startDate: sort })
       .skip(skip)
       .limit(limit)
@@ -97,8 +112,10 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ rows });
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = e instanceof Error ? e.message : String(e);
+    const stack   = e instanceof Error ? e.stack : undefined;
+    console.error('[chart-rows GET] ERROR:', message, stack);
+    return NextResponse.json({ error: message, stack }, { status: 400 });
   }
 }
 
@@ -108,14 +125,16 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as IncomingRow;
     const normalized = validateAndNormalizeRow(body);
+    const gameId = (body.gameId ?? 'LAXMI_DAY').trim().toUpperCase();
 
     const startDate = parseDate(normalized.startDate);
-    const endDate = parseDate(normalized.endDate);
+    const endDate   = parseDate(normalized.endDate);
 
     const row = await ChartRowModel.findOneAndUpdate(
-      { startDate, endDate },
+      { gameId, startDate, endDate },
       {
         $set: {
+          gameId,
           startDate,
           endDate,
           cells: normalized.cells,

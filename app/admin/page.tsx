@@ -203,6 +203,7 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const gameId = 'LAXMI_DAY';
 
   const payloadPreview = useMemo(() => {
     try {
@@ -220,13 +221,29 @@ export default function AdminPage() {
       const res = await fetch('/api/chart-rows', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(row),
+        body: JSON.stringify({ ...row, gameId }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error || 'Request failed');
       setMessage('Saved');
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function seedLaxmiDay() {
+    if (!confirm('This will insert all 180 weeks of historical LAXMI DAY data into MongoDB. Continue?')) return;
+    setBusy(true);
+    setMessage('Seeding LAXMI DAY data...');
+    try {
+      const res = await fetch('/api/laxmi-day/seed', { method: 'POST' });
+      const data = (await res.json()) as { ok?: boolean; total?: number; upserted?: number; error?: string };
+      if (!res.ok) throw new Error(data.error || 'Seed failed');
+      setMessage(`Seed complete: ${data.total} rows total, ${data.upserted} inserted/updated`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Seed failed');
     } finally {
       setBusy(false);
     }
@@ -252,7 +269,7 @@ export default function AdminPage() {
       const res = await fetch('/api/chart-rows/bulk', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ rows }),
+        body: JSON.stringify({ gameId, rows }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error || 'Request failed');
@@ -267,7 +284,20 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-black text-white p-6">
       <div className="max-w-5xl mx-auto space-y-6">
-        <h1 className="text-2xl font-bold">Admin Panel</h1>
+        <h1 className="text-2xl font-bold">Admin Panel — LAXMI DAY</h1>
+
+        {/* Seed historical data */}
+        <div className="bg-zinc-900 border border-yellow-500 rounded p-4 space-y-2">
+          <h2 className="text-lg font-semibold text-yellow-400">Seed Historical Data</h2>
+          <p className="text-sm text-zinc-300">One-time action: inserts all 180 weeks of LAXMI DAY history (Jan 2023 – Jun 2026) into MongoDB.</p>
+          <button
+            disabled={busy}
+            onClick={seedLaxmiDay}
+            className="px-4 py-2 rounded bg-yellow-400 text-black font-bold disabled:opacity-50"
+          >
+            Seed LAXMI DAY Data (180 weeks)
+          </button>
+        </div>
 
         <div className="bg-zinc-900 border border-zinc-700 rounded p-4 space-y-4">
           <h2 className="text-lg font-semibold">Single Row Entry</h2>
