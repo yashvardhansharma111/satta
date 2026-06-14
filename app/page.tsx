@@ -1,30 +1,9 @@
 'use client';
 
-import { useRef, useMemo, useEffect, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import Link from 'next/link';
 
 /* ── types ── */
-type RowData = {
-  dateRange: { start: string; end: string };
-  jodiNumbers: Array<{
-    topDigits: [string, string, string];
-    main: string;
-    bottomDigits: [string, string, string];
-    isRed: boolean;
-  }>;
-};
-
-type ApiRow = {
-  startDate: string;
-  endDate: string;
-  cells: Array<{
-    topDigits: [string, string, string];
-    main: string;
-    bottomDigits: [string, string, string];
-    isRed: boolean;
-  }>;
-};
-
 type SattaGame = {
   id: string;
   name: string;
@@ -38,43 +17,6 @@ type LaxmiLatest = {
   data?: SattaGame;
 };
 
-/* ── fallback sample data ── */
-function seededRandom(seed: number): number {
-  const x = Math.sin(seed) * 10000;
-  return x - Math.floor(x);
-}
-
-function generateSampleData(): RowData[] {
-  const rows: RowData[] = [];
-  const startDate = new Date('2019-03-18');
-  let seed = 42;
-  for (let i = 0; i < 10; i++) {
-    const weekStart = new Date(startDate);
-    weekStart.setDate(weekStart.getDate() + i * 7);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6);
-    const fmt = (d: Date) =>
-      `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-    rows.push({
-      dateRange: { start: fmt(weekStart), end: fmt(weekEnd) },
-      jodiNumbers: Array.from({ length: 7 }, () => {
-        const topD = [
-          String(Math.floor(seededRandom(seed++) * 10)),
-          String(Math.floor(seededRandom(seed++) * 10)),
-          String(Math.floor(seededRandom(seed++) * 10)),
-        ] as [string, string, string];
-        const main = String(Math.floor(seededRandom(seed++) * 100)).padStart(2, '0');
-        const bottomD = [
-          String(Math.floor(seededRandom(seed++) * 10)),
-          String(Math.floor(seededRandom(seed++) * 10)),
-          String(Math.floor(seededRandom(seed++) * 10)),
-        ] as [string, string, string];
-        return { topDigits: topD, main, bottomDigits: bottomD, isRed: seededRandom(seed++) > 0.6 };
-      }),
-    });
-  }
-  return rows;
-}
 
 /* ── colour palette ── */
 const C = {
@@ -137,65 +79,16 @@ function PanelBtn({ gameId }: { gameId: string }) {
 
 /* ══════════════════════════════════════════════════════════════ */
 export default function SattaMatkaPanalChart() {
-  const chartRef = useRef<HTMLDivElement>(null);
   const topRef   = useRef<HTMLDivElement>(null);
-
-  /* admin chart data (LAXMI DAY history) */
-  const [chartData, setChartData] = useState<RowData[]>([]);
 
   /* real satta API data */
   const [games, setGames] = useState<SattaGame[]>([]);
   const [gamesLoading, setGamesLoading] = useState(true);
 
-  /* LAXMI DAY live result from MongoDB */
-  const [laxmiGame, setLaxmiGame] = useState<SattaGame | null>(null);
+  /* LAXMI DAY + LAXMI NIGHT live results from MongoDB */
+  const [laxmiGame,      setLaxmiGame]      = useState<SattaGame | null>(null);
+  const [laxmiNightGame, setLaxmiNightGame] = useState<SattaGame | null>(null);
 
-  const formatDate = useMemo(
-    () => (d: Date) =>
-      `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`,
-    []
-  );
-
-  const formatMain = useMemo(
-    () => (v: string) => {
-      const s = v.trim();
-      if (/^\d$/.test(s)) return `0${s}`;
-      if (/^\d{2}$/.test(s)) return s;
-      return s;
-    },
-    []
-  );
-
-  /* fetch admin panel chart rows — polls every 2 min since it's not real-time */
-  useEffect(() => {
-    let alive = true;
-    const fetch$ = async () => {
-      const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 8000);
-      try {
-        const res  = await fetch('/api/chart-rows?limit=2000&sort=desc', { cache: 'no-store', signal: controller.signal });
-        const json = (await res.json()) as { rows?: ApiRow[]; error?: string };
-        if (!res.ok) throw new Error(json.error);
-        const rows = (json.rows ?? []).map((r) => ({
-          dateRange: { start: formatDate(new Date(r.startDate)), end: formatDate(new Date(r.endDate)) },
-          jodiNumbers: (r.cells ?? []).slice(0, 7).map((c) => ({
-            topDigits:    c.topDigits,
-            main:         c.main,
-            bottomDigits: c.bottomDigits,
-            isRed:        c.isRed,
-          })),
-        }));
-        if (alive) setChartData(rows);
-      } catch {
-        /* silently keep previous data on error/timeout */
-      } finally {
-        window.clearTimeout(timer);
-      }
-    };
-    fetch$();
-    const id = window.setInterval(fetch$, 120_000);
-    return () => { alive = false; window.clearInterval(id); };
-  }, [formatDate]);
 
   /* fetch real satta games — polls every 60s */
   useEffect(() => {
@@ -217,7 +110,7 @@ export default function SattaMatkaPanalChart() {
     return () => { alive = false; window.clearInterval(id); };
   }, []);
 
-  /* fetch LAXMI DAY latest result from MongoDB — polls every 60s */
+  /* fetch LAXMI DAY latest result — polls every 60s */
   useEffect(() => {
     let alive = true;
     const fetch$ = async () => {
@@ -226,9 +119,25 @@ export default function SattaMatkaPanalChart() {
       try {
         const res  = await fetch('/api/laxmi-day/latest', { cache: 'no-store', signal: controller.signal });
         const json = (await res.json()) as LaxmiLatest;
-        if (json.status === 'success' && json.data && alive) {
-          setLaxmiGame(json.data);
-        }
+        if (json.status === 'success' && json.data && alive) setLaxmiGame(json.data);
+      } catch { /* keep previous on error */ }
+      finally { window.clearTimeout(timer); }
+    };
+    fetch$();
+    const id = window.setInterval(fetch$, 60_000);
+    return () => { alive = false; window.clearInterval(id); };
+  }, []);
+
+  /* fetch LAXMI NIGHT latest result — polls every 60s */
+  useEffect(() => {
+    let alive = true;
+    const fetch$ = async () => {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 8000);
+      try {
+        const res  = await fetch('/api/laxmi-night/latest', { cache: 'no-store', signal: controller.signal });
+        const json = (await res.json()) as LaxmiLatest;
+        if (json.status === 'success' && json.data && alive) setLaxmiNightGame(json.data);
       } catch { /* keep previous on error */ }
       finally { window.clearTimeout(timer); }
     };
@@ -241,8 +150,7 @@ export default function SattaMatkaPanalChart() {
   const headlineGame = games.find((g) => hasToday(g)) ?? games.find((g) => g.yesterday_result?.number !== null && g.yesterday_result?.number !== undefined);
   const headlineResult = headlineGame ? getResult(headlineGame) : '***';
 
-  const scrollToBottom = () => chartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  const scrollToTop    = () => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const scrollToTop = () => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   /* ── render ── */
   return (
@@ -330,19 +238,11 @@ export default function SattaMatkaPanalChart() {
         <div style={{ fontSize: '14px', lineHeight: 1.9, marginBottom: '14px' }}>
           के ऑफलाइन व्यापार,बुकी लोग खाईवाल कटिंग के लिए मैसेज करो डायरेक्ट ऑफिस
         </div>
-        <button style={{ backgroundColor: C.pink, color: C.white, border: 'none', borderRadius: '20px', padding: '10px 26px', fontSize: '15px', fontWeight: 'bold', cursor: 'pointer' }}>
-          📱 JoinOnWhatsapp
-        </button>
-      </div>
-
-      {/* ── GUESSING APP ── */}
-      <div style={{ backgroundColor: C.darkRed, margin: '3px 4px', padding: '16px', textAlign: 'center' }}>
-        <div style={{ color: C.white, fontSize: '15px', fontStyle: 'italic', marginBottom: '4px' }}>🌐 Matka Guessing का असली मंच यहाँ है</div>
-        <div style={{ color: C.white, fontSize: '15px', fontStyle: 'italic', marginBottom: '4px' }}>🥇 Guess करो और बनो No.1</div>
-        <div style={{ color: C.white, fontSize: '15px', fontStyle: 'italic', marginBottom: '12px' }}>📥 Download DPBoss Forum App Today</div>
-        <button style={{ backgroundColor: C.white, color: C.darkRed, border: 'none', borderRadius: '20px', padding: '8px 24px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' }}>
-          📥 Download App
-        </button>
+        <a href="https://wa.me/919425894347" target="_blank" rel="noopener noreferrer">
+          <button style={{ backgroundColor: C.pink, color: C.white, border: 'none', borderRadius: '20px', padding: '10px 26px', fontSize: '15px', fontWeight: 'bold', cursor: 'pointer' }}>
+            📱 JoinOnWhatsapp
+          </button>
+        </a>
       </div>
 
       {/* ── NOTICE 2 ── */}
@@ -351,7 +251,7 @@ export default function SattaMatkaPanalChart() {
         <div style={{ backgroundColor: C.peach, padding: '12px', textAlign: 'center', fontSize: '14px', lineHeight: 1.9 }}>
           <div>अपना बाज़ार dpbossss.boston वेबसाइट में डलवाने</div>
           <div>के लिए आज ही हमें ईमेल करे</div>
-          <div style={{ color: '#0000CC', marginTop: '6px', fontWeight: 'bold' }}>Email : support@dpboss.net</div>
+          <div style={{ color: '#0000CC', marginTop: '6px', fontWeight: 'bold' }}>Email : laxmimatkabazar@gmail.com</div>
           <div style={{ marginTop: '4px' }}>शर्तें लागु</div>
         </div>
       </div>
@@ -381,9 +281,7 @@ export default function SattaMatkaPanalChart() {
             <div style={{ display: 'flex', alignItems: 'center', backgroundColor: isHighlight ? C.yellow : C.peach, borderBottom: `1px solid ${C.red}`, padding: '10px 8px' }}>
               <div style={{ width: '68px', flexShrink: 0 }}>
                 <Link href="/jodi/laxmi-day">
-                  <button style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 12px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
-                    Jodi
-                  </button>
+                  <button style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 12px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>Jodi</button>
                 </Link>
               </div>
               <div style={{ flex: 1, textAlign: 'center', padding: '0 6px' }}>
@@ -393,9 +291,32 @@ export default function SattaMatkaPanalChart() {
               </div>
               <div style={{ width: '68px', textAlign: 'right', flexShrink: 0 }}>
                 <Link href="/panel/laxmi-day">
-                  <button style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 12px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
-                    Panel
-                  </button>
+                  <button style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 12px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>Panel</button>
+                </Link>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* LAXMI NIGHT row */}
+        {laxmiNightGame && (() => {
+          const result = getResult(laxmiNightGame);
+          const isHighlight = hasToday(laxmiNightGame);
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: isHighlight ? C.yellow : C.peach, borderBottom: `1px solid ${C.red}`, padding: '10px 8px' }}>
+              <div style={{ width: '68px', flexShrink: 0 }}>
+                <Link href="/jodi/laxmi-night">
+                  <button style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 12px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>Jodi</button>
+                </Link>
+              </div>
+              <div style={{ flex: 1, textAlign: 'center', padding: '0 6px' }}>
+                <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '17px', fontStyle: 'italic' }}>{laxmiNightGame.name}</div>
+                <div style={{ color: C.purple, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic' }}>{result}</div>
+                <div style={{ fontSize: '12px', color: '#444', fontStyle: 'italic' }}>{laxmiNightGame.time}</div>
+              </div>
+              <div style={{ width: '68px', textAlign: 'right', flexShrink: 0 }}>
+                <Link href="/panel/laxmi-night">
+                  <button style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 12px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>Panel</button>
                 </Link>
               </div>
             </div>
@@ -437,53 +358,6 @@ export default function SattaMatkaPanalChart() {
         )}
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════ */}
-      {/* ── KBC BOMBAY PANEL CHART (admin-uploaded data) ── */}
-      {/* ══════════════════════════════════════════════════════════════ */}
-
-      <div style={{ backgroundColor: C.pink, padding: '10px', margin: '10px 4px 0 4px', textAlign: 'center' }}>
-        <span style={{ color: C.white, fontWeight: 'bold', fontSize: '18px', fontStyle: 'italic' }}>
-          LAXMI DAY PANEL CHART RECORD
-        </span>
-      </div>
-
-      <div ref={chartRef} style={{ ...sec, padding: 0, overflowX: 'auto', margin: '0 4px 4px 4px' }}>
-        {chartData.length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: C.navy, fontWeight: 'bold' }}>
-            No chart data yet.
-          </div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: '"Times New Roman", serif' }}>
-            <tbody>
-              {chartData.map((row, ri) => (
-                <tr key={ri} style={{ borderBottom: `1px solid ${C.red}`, backgroundColor: ri % 2 === 0 ? C.peach : C.altRow }}>
-                  <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: '11px', whiteSpace: 'nowrap', minWidth: '78px', borderRight: `1px solid ${C.red}`, verticalAlign: 'middle' }}>
-                    <div>{row.dateRange.start}</div>
-                    <div style={{ fontSize: '9px' }}>to</div>
-                    <div>{row.dateRange.end}</div>
-                  </td>
-                  {row.jodiNumbers.map((jodi, ji) => (
-                    <td key={ji} style={{ padding: '4px 2px', textAlign: 'center', borderRight: ji < 6 ? `1px solid ${C.red}` : 'none', minWidth: '58px', height: '54px', verticalAlign: 'middle' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', fontSize: '10px', fontWeight: 'bold', color: '#000', lineHeight: 1 }}>
-                          {jodi.topDigits.map((d, k) => <span key={k}>{d}</span>)}
-                        </div>
-                        <div style={{ fontSize: '22px', fontWeight: 'bold', fontStyle: 'italic', color: jodi.isRed ? C.red : C.navy, minWidth: '28px', textAlign: 'center', margin: '0 2px' }}>
-                          {formatMain(jodi.main)}
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', fontSize: '10px', fontWeight: 'bold', color: '#000', lineHeight: 1 }}>
-                          {jodi.bottomDigits.map((d, k) => <span key={k}>{d}</span>)}
-                        </div>
-                      </div>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
       {/* ── FOOTER ── */}
       <div style={{ ...sec, padding: '14px', textAlign: 'center', margin: '4px' }}>
         <div style={{ fontStyle: 'italic', fontSize: '12px', lineHeight: 1.8, marginBottom: '12px', color: '#333' }}>
@@ -503,9 +377,11 @@ export default function SattaMatkaPanalChart() {
         <button onClick={scrollToTop} style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '6px', padding: '6px 16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
           VIP Zone
         </button>
-        <button onClick={scrollToBottom} style={{ backgroundColor: C.darkRed, color: C.white, border: 'none', borderRadius: '6px', padding: '6px 16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
-          Laxmi Chart ↓
-        </button>
+        <a href="https://wa.me/919425894347" target="_blank" rel="noopener noreferrer">
+          <button style={{ backgroundColor: '#25D366', color: C.white, border: 'none', borderRadius: '6px', padding: '6px 16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
+            📱 WhatsApp
+          </button>
+        </a>
         <button onClick={() => window.location.reload()} style={{ backgroundColor: C.navy, color: C.white, border: 'none', borderRadius: '6px', padding: '6px 16px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
           REFRESH
         </button>

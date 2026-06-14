@@ -4,7 +4,6 @@ import { connectToMongo } from '@/lib/mongodb';
 import { ChartRowModel } from '@/models/ChartRow';
 import { GameSettingsModel } from '@/models/GameSettings';
 
-/* Returns today's and yesterday's jodi for LAXMI DAY, matching the SattaGame shape used on home page */
 export async function GET() {
   try {
     await connectToMongo();
@@ -15,56 +14,41 @@ export async function GET() {
     yesterday.setUTCDate(todayUTC.getUTCDate() - 1);
 
     const [todayRow, yestRow, settings] = await Promise.all([
-      ChartRowModel.findOne({
-        gameId:    'LAXMI_DAY',
-        startDate: { $lte: todayUTC },
-        endDate:   { $gte: todayUTC },
-      }).lean(),
-      ChartRowModel.findOne({
-        gameId:    'LAXMI_DAY',
-        startDate: { $lte: yesterday },
-        endDate:   { $gte: yesterday },
-      }).lean(),
-      GameSettingsModel.findOne({ gameId: 'LAXMI_DAY' }).lean(),
+      ChartRowModel.findOne({ gameId: 'LAXMI_NIGHT', startDate: { $lte: todayUTC }, endDate: { $gte: todayUTC } }).lean(),
+      ChartRowModel.findOne({ gameId: 'LAXMI_NIGHT', startDate: { $lte: yesterday }, endDate: { $gte: yesterday } }).lean(),
+      GameSettingsModel.findOne({ gameId: 'LAXMI_NIGHT' }).lean(),
     ]);
 
-    const gameTime = settings?.time ?? '11:15 AM - 2:15 PM';
+    const gameTime = settings?.time ?? '7:30 PM - 8:30 PM';
 
     function dayIndex(d: Date): number {
-      // 0=Mon…6=Sun
-      const raw = d.getUTCDay(); // 0=Sun…6=Sat
+      const raw = d.getUTCDay();
       return raw === 0 ? 6 : raw - 1;
     }
 
     function getJodi(row: typeof todayRow, date: Date): string | null {
       if (!row) return null;
-      const idx  = dayIndex(date);
-      const cell = row.cells[idx];
+      const cell = row.cells[dayIndex(date)];
       if (!cell) return null;
       const v = cell.main.trim();
       if (v === '**' || v === '*' || v === '') return null;
       return v.padStart(2, '0');
     }
 
-    const todayJodi  = getJodi(todayRow,  todayUTC);
-    const yestJodi   = getJodi(yestRow,   yesterday);
-    const todayDate  = todayUTC.toISOString().slice(0, 10);
-    const yestDate   = yesterday.toISOString().slice(0, 10);
-
     return NextResponse.json({
       status: 'success',
       data: {
-        id:   'laxmi-day',
-        name: 'LAXMI DAY',
-        time: gameTime,
-        today_result:     { number: todayJodi,  date: todayDate },
-        yesterday_result: { number: yestJodi,   date: yestDate },
+        id:               'laxmi-night',
+        name:             'LAXMI NIGHT',
+        time:             gameTime,
+        today_result:     { number: getJodi(todayRow,  todayUTC),  date: todayUTC.toISOString().slice(0, 10) },
+        yesterday_result: { number: getJodi(yestRow,   yesterday), date: yesterday.toISOString().slice(0, 10) },
       },
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     const stack   = e instanceof Error ? e.stack : undefined;
-    console.error('[laxmi-day/latest] ERROR:', message, stack);
+    console.error('[laxmi-night/latest] ERROR:', message, stack);
     return NextResponse.json({ error: message, stack }, { status: 400 });
   }
 }

@@ -28,7 +28,7 @@ export async function POST() {
   try {
     await connectToMongo();
 
-    const dataPath = path.join(process.cwd(), 'data', 'laxmi-day.json');
+    const dataPath = path.join(process.cwd(), 'data', 'laxmi-night.json');
     const raw      = fs.readFileSync(dataPath, 'utf-8');
     const seed     = JSON.parse(raw) as { gameId: string; rows: SeedRow[] };
 
@@ -43,14 +43,11 @@ export async function POST() {
 
     await ChartRowModel.insertMany(docs, { ordered: false });
 
-    return NextResponse.json({
-      ok:    true,
-      total: docs.length,
-    });
+    return NextResponse.json({ ok: true, total: docs.length });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     const stack   = e instanceof Error ? e.stack : undefined;
-    console.error('[laxmi-day/seed] ERROR:', message, stack);
+    console.error('[laxmi-night/seed] ERROR:', message, stack);
     return NextResponse.json({ error: message, stack }, { status: 400 });
   }
 }

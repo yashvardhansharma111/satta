@@ -13,7 +13,18 @@
       "Read(//c/Users/yashv/.claude/projects/d--dpboss/**)",
       "Bash(python3 -c ' *)",
       "Bash(python3)",
-      "Read(//c/Users/yashv/AppData/Local/Temp/**)"
+      "Read(//c/Users/yashv/AppData/Local/Temp/**)",
+      "Bash(python -c \"import json; d=json.load\\(open\\('d:/dpboss/data/laxmi-day.json'\\)\\); rows=d.get\\('rows',[]\\); print\\(f'Total rows: {len\\(rows\\)}'\\); print\\('First row:', json.dumps\\(rows[0] if rows else None, indent=2\\)\\); print\\('Last row:', json.dumps\\(rows[-1] if rows else None, indent=2\\)\\)\")",
+      "Bash(python)",
+      "Bash(python -c ' *)",
+      "Bash(curl -s -X POST http://localhost:3000/api/laxmi-day/seed)",
+      "Bash(del d:\\\\dpboss\\\\raw_panel_data.txt)",
+      "PowerShell(python \"d:\\\\dpboss\\\\parse_panel2.py\" 2>&1)",
+      "PowerShell(Invoke-RestMethod -Method POST -Uri \"http://localhost:3000/api/laxmi-day/seed\")",
+      "Bash(python parse_laxmi_night.py)",
+      "Bash(curl -s -X POST http://localhost:3000/api/laxmi-night/seed)",
+      "Bash(curl -s \"http://localhost:3000/api/chart-rows?gameId=LAXMI_NIGHT&sort=asc&limit=5\")",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(r['startDate'][:10], r['cells'][0]['main'], r['cells'][0]['topDigits']\\) for r in d['rows'][:5]]\")"
     ],
     "additionalDirectories": [
       "d:\\dpboss",
