@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type CellInput = {
   topDigits: [string, string, string];
@@ -37,10 +37,6 @@ function normalizeDigit(d: string): string {
 }
 
 function parseCellToken(token: string): CellInput {
-  // Supported token formats:
-  // - "123-45-678" (top-main-bottom)
-  // - "r:123-45-678" (red main)
-  // - "123-**-678" (main can be **)
   const raw = token.trim();
   const isRed = raw.toLowerCase().startsWith('r:') || raw.toLowerCase().startsWith('red:');
   const t = isRed ? raw.split(':').slice(1).join(':').trim() : raw;
@@ -85,36 +81,14 @@ function expandedCsvExample(): string {
   return [
     expandedCsvHeader(),
     [
-      '07/09/2025',
-      '13/09/2025',
-      '123',
-      '45',
-      '678',
-      '0',
-      '111',
-      '85',
-      '999',
-      '0',
-      '222',
-      '47',
-      '333',
-      '0',
-      '444',
-      '77',
-      '555',
-      '1',
-      '666',
-      '10',
-      '777',
-      '0',
-      '888',
-      '86',
-      '000',
-      '0',
-      '999',
-      '07',
-      '444',
-      '0',
+      '07/09/2025', '13/09/2025',
+      '123', '45', '678', '0',
+      '111', '85', '999', '0',
+      '222', '47', '333', '0',
+      '444', '77', '555', '1',
+      '666', '10', '777', '0',
+      '888', '86', '000', '0',
+      '999', '07', '444', '0',
     ].join(','),
   ].join('\n');
 }
@@ -197,13 +171,103 @@ function parseBulkText(text: string): RowInput[] {
   return rows;
 }
 
+/* ── Login Gate ── */
+function LoginGate({ onAuth }: { onAuth: () => void }) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function doLogin() {
+    if (!password.trim()) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      if (res.ok) {
+        sessionStorage.setItem('admin_authed', '1');
+        onAuth();
+      } else {
+        setError('Wrong password. Try again.');
+        setPassword('');
+      }
+    } catch {
+      setError('Network error. Try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-black text-white flex items-center justify-center">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-8 space-y-5 w-80">
+        <h1 className="text-xl font-bold text-center text-yellow-400">Admin Login</h1>
+
+        <label className="space-y-1 block">
+          <div className="text-sm text-zinc-400">Username</div>
+          <input
+            className="w-full rounded bg-black border border-zinc-700 p-2 text-zinc-400 cursor-not-allowed"
+            value="admin"
+            readOnly
+          />
+        </label>
+
+        <label className="space-y-1 block">
+          <div className="text-sm text-zinc-400">Password</div>
+          <input
+            type="password"
+            className="w-full rounded bg-black border border-zinc-700 p-2 focus:outline-none focus:border-yellow-400"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void doLogin(); }}
+            placeholder="Enter password"
+            autoFocus
+          />
+        </label>
+
+        {error && <div className="text-red-400 text-sm">{error}</div>}
+
+        <button
+          disabled={loading || !password.trim()}
+          onClick={() => void doLogin()}
+          className="w-full px-4 py-2 rounded bg-yellow-400 text-black font-bold disabled:opacity-50 hover:bg-yellow-300 transition-colors"
+        >
+          {loading ? 'Logging in…' : 'Login'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main Admin Panel ── */
 export default function AdminPage() {
+  const [authed, setAuthed] = useState(false);
   const [row, setRow] = useState<RowInput>(() => emptyRow());
   const [bulkText, setBulkText] = useState<string>(() => formatExample());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>('');
+  const [gameTime, setGameTime] = useState('12:00 PM - 02:00 PM');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gameId = 'LAXMI_DAY';
+
+  /* Check session on mount */
+  useEffect(() => {
+    if (sessionStorage.getItem('admin_authed') === '1') {
+      setAuthed(true);
+    }
+  }, []);
+
+  /* Load current game time from settings */
+  useEffect(() => {
+    if (!authed) return;
+    fetch('/api/laxmi-day/settings')
+      .then((r) => r.json())
+      .then((d: { time?: string }) => { if (d.time) setGameTime(d.time); })
+      .catch(() => {});
+  }, [authed]);
 
   const payloadPreview = useMemo(() => {
     try {
@@ -213,6 +277,25 @@ export default function AdminPage() {
       return '';
     }
   }, [bulkText]);
+
+  async function saveTime() {
+    setBusy(true);
+    setMessage('');
+    try {
+      const res = await fetch('/api/laxmi-day/settings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ time: gameTime }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok) throw new Error(data.error || 'Failed to save');
+      setMessage('Game time saved successfully');
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Failed to save time');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submitSingle() {
     setBusy(true);
@@ -281,10 +364,43 @@ export default function AdminPage() {
     }
   }
 
+  if (!authed) {
+    return <LoginGate onAuth={() => setAuthed(true)} />;
+  }
+
   return (
     <div className="min-h-screen bg-black text-white p-6">
       <div className="max-w-5xl mx-auto space-y-6">
-        <h1 className="text-2xl font-bold">Admin Panel — LAXMI DAY</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Admin Panel — LAXMI DAY</h1>
+          <button
+            onClick={() => { sessionStorage.removeItem('admin_authed'); setAuthed(false); }}
+            className="px-3 py-1 rounded bg-zinc-700 text-sm font-medium hover:bg-zinc-600"
+          >
+            Logout
+          </button>
+        </div>
+
+        {/* Game Settings */}
+        <div className="bg-zinc-900 border border-zinc-700 rounded p-4 space-y-3">
+          <h2 className="text-lg font-semibold">Game Settings</h2>
+          <label className="space-y-1 block">
+            <div className="text-sm text-zinc-300">LAXMI DAY Time <span className="text-zinc-500">(displayed on home page below the result)</span></div>
+            <input
+              className="w-full max-w-sm rounded bg-black border border-zinc-700 p-2 focus:outline-none focus:border-yellow-400"
+              value={gameTime}
+              onChange={(e) => setGameTime(e.target.value)}
+              placeholder="12:00 PM - 02:00 PM"
+            />
+          </label>
+          <button
+            disabled={busy}
+            onClick={() => void saveTime()}
+            className="px-4 py-2 rounded bg-yellow-400 text-black font-bold disabled:opacity-50"
+          >
+            Save Time
+          </button>
+        </div>
 
         {/* Seed historical data */}
         <div className="bg-zinc-900 border border-yellow-500 rounded p-4 space-y-2">
@@ -292,7 +408,7 @@ export default function AdminPage() {
           <p className="text-sm text-zinc-300">One-time action: inserts all 180 weeks of LAXMI DAY history (Jan 2023 – Jun 2026) into MongoDB.</p>
           <button
             disabled={busy}
-            onClick={seedLaxmiDay}
+            onClick={() => void seedLaxmiDay()}
             className="px-4 py-2 rounded bg-yellow-400 text-black font-bold disabled:opacity-50"
           >
             Seed LAXMI DAY Data (180 weeks)
@@ -339,7 +455,7 @@ export default function AdminPage() {
                           const v = e.target.value.padEnd(3, '0').slice(0, 3);
                           setRow((r) => {
                             const next = [...r.cells];
-                            next[idx] = { ...next[idx], topDigits: [v[0]!, v[1]!, v[2]!] };
+                            next[idx] = { ...next[idx]!, topDigits: [v[0]!, v[1]!, v[2]!] };
                             return { ...r, cells: next };
                           });
                         }}
@@ -355,7 +471,7 @@ export default function AdminPage() {
                           const v = e.target.value;
                           setRow((r) => {
                             const next = [...r.cells];
-                            next[idx] = { ...next[idx], main: v };
+                            next[idx] = { ...next[idx]!, main: v };
                             return { ...r, cells: next };
                           });
                         }}
@@ -371,7 +487,7 @@ export default function AdminPage() {
                           const v = e.target.value.padEnd(3, '0').slice(0, 3);
                           setRow((r) => {
                             const next = [...r.cells];
-                            next[idx] = { ...next[idx], bottomDigits: [v[0]!, v[1]!, v[2]!] };
+                            next[idx] = { ...next[idx]!, bottomDigits: [v[0]!, v[1]!, v[2]!] };
                             return { ...r, cells: next };
                           });
                         }}
@@ -387,7 +503,7 @@ export default function AdminPage() {
                       onChange={(e) => {
                         setRow((r) => {
                           const next = [...r.cells];
-                          next[idx] = { ...next[idx], isRed: e.target.checked };
+                          next[idx] = { ...next[idx]!, isRed: e.target.checked };
                           return { ...r, cells: next };
                         });
                       }}
@@ -402,7 +518,7 @@ export default function AdminPage() {
           <div className="flex gap-3">
             <button
               disabled={busy}
-              onClick={submitSingle}
+              onClick={() => void submitSingle()}
               className="px-4 py-2 rounded bg-yellow-400 text-black font-bold disabled:opacity-50"
             >
               Save Single Row
@@ -420,13 +536,10 @@ export default function AdminPage() {
         <div className="bg-zinc-900 border border-zinc-700 rounded p-4 space-y-4">
           <h2 className="text-lg font-semibold">Bulk Upload</h2>
           <div className="text-sm text-zinc-300 space-y-2">
-            <div>
-              Paste one line per row (CSV). You can use either format.
-            </div>
+            <div>Paste one line per row (CSV). You can use either format.</div>
             <div className="text-zinc-200 font-semibold">Format A (compact)</div>
             <div className="text-zinc-200">startDate,endDate,cell1,cell2,cell3,cell4,cell5,cell6,cell7</div>
             <div className="text-zinc-200">cell token: 123-45-678 or r:123-45-678 (red)</div>
-
             <div className="text-zinc-200 font-semibold">Format B (expanded columns)</div>
             <div className="text-zinc-200">Header supported. Each cell uses: top (3 chars), main, bottom (3 chars), red (0/1)</div>
           </div>
@@ -455,10 +568,10 @@ export default function AdminPage() {
             onChange={(e) => setBulkText(e.target.value)}
           />
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <button
               disabled={busy}
-              onClick={submitBulk}
+              onClick={() => void submitBulk()}
               className="px-4 py-2 rounded bg-yellow-400 text-black font-bold disabled:opacity-50"
             >
               Upload Bulk
@@ -514,7 +627,7 @@ export default function AdminPage() {
           ) : null}
         </div>
 
-        {message ? <div className="text-sm text-yellow-300">{message}</div> : null}
+        {message ? <div className="text-sm text-yellow-300 p-3 bg-zinc-900 rounded border border-zinc-700">{message}</div> : null}
       </div>
     </div>
   );

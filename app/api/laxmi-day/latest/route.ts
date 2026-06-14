@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { connectToMongo } from '@/lib/mongodb';
 import { ChartRowModel } from '@/models/ChartRow';
+import { GameSettingsModel } from '@/models/GameSettings';
 
 /* Returns today's and yesterday's jodi for LAXMI DAY, matching the SattaGame shape used on home page */
 export async function GET() {
@@ -13,19 +14,21 @@ export async function GET() {
     const yesterday = new Date(todayUTC);
     yesterday.setUTCDate(todayUTC.getUTCDate() - 1);
 
-    // Find the week row that contains today
-    const todayRow = await ChartRowModel.findOne({
-      gameId:    'LAXMI_DAY',
-      startDate: { $lte: todayUTC },
-      endDate:   { $gte: todayUTC },
-    }).lean();
+    const [todayRow, yestRow, settings] = await Promise.all([
+      ChartRowModel.findOne({
+        gameId:    'LAXMI_DAY',
+        startDate: { $lte: todayUTC },
+        endDate:   { $gte: todayUTC },
+      }).lean(),
+      ChartRowModel.findOne({
+        gameId:    'LAXMI_DAY',
+        startDate: { $lte: yesterday },
+        endDate:   { $gte: yesterday },
+      }).lean(),
+      GameSettingsModel.findOne({ gameId: 'LAXMI_DAY' }).lean(),
+    ]);
 
-    // Find the week row that contains yesterday
-    const yestRow = await ChartRowModel.findOne({
-      gameId:    'LAXMI_DAY',
-      startDate: { $lte: yesterday },
-      endDate:   { $gte: yesterday },
-    }).lean();
+    const gameTime = settings?.time ?? '12:00 PM - 02:00 PM';
 
     function dayIndex(d: Date): number {
       // 0=Mon…6=Sun
@@ -53,7 +56,7 @@ export async function GET() {
       data: {
         id:   'laxmi-day',
         name: 'LAXMI DAY',
-        time: '12:00 PM - 02:00 PM',
+        time: gameTime,
         today_result:     { number: todayJodi,  date: todayDate },
         yesterday_result: { number: yestJodi,   date: yestDate },
       },

@@ -450,8 +450,7 @@ export default function SattaMatkaPanalChart() {
       <div ref={chartRef} style={{ ...sec, padding: 0, overflowX: 'auto', margin: '0 4px 4px 4px' }}>
         {chartData.length === 0 ? (
           <div style={{ padding: '20px', textAlign: 'center', color: C.navy, fontWeight: 'bold' }}>
-            No chart data yet. Upload from{' '}
-            <Link href="/admin" style={{ color: C.purple }}>Admin Panel</Link>.
+            No chart data yet.
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: '"Times New Roman", serif' }}>
