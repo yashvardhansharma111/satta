@@ -1,21 +1,90 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 
 /* ── types ── */
+type ResultEntry = {
+  number: string | null;
+  open?:  string | null;
+  close?: string | null;
+  date:   string;
+};
+
 type SattaGame = {
   id: string;
   name: string;
   time: string;
-  today_result: { number: string | null; date: string } | null;
-  yesterday_result: { number: string | null; date: string } | null;
+  today_result:     ResultEntry | null;
+  yesterday_result: ResultEntry | null;
 };
 
 type LaxmiLatest = {
   status: string;
   data?: SattaGame;
 };
+
+/* ── time helpers ── */
+function parseTimeRange(timeStr: string): { open: number; close: number } {
+  function parseOne(s: string): number {
+    const m = s.trim().match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+    if (!m) return -1;
+    let h = Number(m[1]);
+    const min = Number(m[2]);
+    if (m[3].toUpperCase() === 'PM' && h !== 12) h += 12;
+    if (m[3].toUpperCase() === 'AM' && h === 12) h = 0;
+    return h * 60 + min;
+  }
+  const parts = timeStr.split(' - ');
+  return { open: parseOne(parts[0] ?? ''), close: parseOne(parts[1] ?? '') };
+}
+
+function pickHeadline(
+  apiGames: SattaGame[],
+  laxmi: SattaGame | null,
+  laxmiNight: SattaGame | null,
+  nowMins: number,
+): SattaGame | null {
+  const all = [...apiGames, ...(laxmi ? [laxmi] : []), ...(laxmiNight ? [laxmiNight] : [])];
+  if (all.length === 0) return null;
+
+  const tagged = all.map((g) => {
+    const { open, close } = parseTimeRange(g.time);
+    const isRunning = open >= 0 && close >= 0 && nowMins >= open && nowMins <= close;
+    const hasResult = hasToday(g);
+    return { g, open, close, isRunning, hasResult };
+  });
+
+  // 1. Running right now WITH result — closest to closing
+  const runningWithResult = tagged.filter((t) => t.isRunning && t.hasResult);
+  if (runningWithResult.length > 0)
+    return runningWithResult.sort((a, b) => a.close - b.close)[0]!.g;
+
+  // 2. Running right now WITHOUT result — soonest to close
+  const running = tagged.filter((t) => t.isRunning);
+  if (running.length > 0)
+    return running.sort((a, b) => a.close - b.close)[0]!.g;
+
+  // 3. Most recently closed WITH result
+  const recentClosed = tagged
+    .filter((t) => t.close >= 0 && t.close < nowMins && t.hasResult)
+    .sort((a, b) => b.close - a.close);
+  if (recentClosed.length > 0) return recentClosed[0]!.g;
+
+  // 4. Any with result
+  const anyResult = tagged.find((t) => t.hasResult);
+  if (anyResult) return anyResult.g;
+
+  return all[0] ?? null;
+}
+
+function gameStatus(timeStr: string, nowMins: number): 'running' | 'completed' | 'upcoming' {
+  const { open, close } = parseTimeRange(timeStr);
+  if (open < 0 || close < 0) return 'completed';
+  if (nowMins >= open && nowMins <= close) return 'running';
+  if (nowMins < open) return 'upcoming';
+  return 'completed';
+}
 
 
 /* ── colour palette ── */
@@ -39,21 +108,18 @@ const sec: React.CSSProperties = {
 };
 
 /* ── helpers ── */
-function fmtResult(n: string | number | null | undefined): string {
-  if (n === null || n === undefined) return '***';
-  return String(n).padStart(2, '0');
+function hasToday(game: { today_result?: ResultEntry | null }): boolean {
+  return game.today_result?.number != null;
 }
 
-function getResult(game: { today_result?: { number: string | null } | null; yesterday_result?: { number: string | null } | null }): string {
-  const today = game.today_result?.number;
-  if (today !== null && today !== undefined) return fmtResult(today);
-  const yest = game.yesterday_result?.number;
-  if (yest !== null && yest !== undefined) return fmtResult(yest);
-  return '***';
-}
-
-function hasToday(game: { today_result?: { number: string | null } | null }): boolean {
-  return game.today_result?.number !== null && game.today_result?.number !== undefined;
+function getResult(game: SattaGame): string {
+  const r = game.today_result ?? game.yesterday_result;
+  if (!r || r.number == null) return '***';
+  const main = String(r.number).padStart(2, '0');
+  if (r.open && r.close) return `${r.open}-${main}-${r.close}`;
+  if (r.open)            return `${r.open}-${main}-***`;
+  if (r.close)           return `***-${main}-${r.close}`;
+  return main;
 }
 
 /* ── shared button components ── */
@@ -79,30 +145,43 @@ function PanelBtn({ gameId }: { gameId: string }) {
 
 /* ══════════════════════════════════════════════════════════════ */
 export default function SattaMatkaPanalChart() {
-  const topRef   = useRef<HTMLDivElement>(null);
+  const topRef = useRef<HTMLDivElement>(null);
 
-  /* real satta API data */
-  const [games, setGames] = useState<SattaGame[]>([]);
+  /* clock — updates every 60 s so headline & row highlights re-compute */
+  const [nowMins, setNowMins] = useState(() => {
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  });
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const d = new Date();
+      setNowMins(d.getHours() * 60 + d.getMinutes());
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  /* all markets from API */
+  const [games,        setGames]        = useState<SattaGame[]>([]);
   const [gamesLoading, setGamesLoading] = useState(true);
 
-  /* LAXMI DAY + LAXMI NIGHT live results from MongoDB */
+  /* Laxmi Day + Night from MongoDB */
   const [laxmiGame,      setLaxmiGame]      = useState<SattaGame | null>(null);
   const [laxmiNightGame, setLaxmiNightGame] = useState<SattaGame | null>(null);
 
-
-  /* fetch real satta games — polls every 60s */
+  /* fetch all markets — polls every 60 s */
   useEffect(() => {
     let alive = true;
     const fetch$ = async () => {
       const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 10000);
+      const timer = window.setTimeout(() => controller.abort(), 10_000);
       try {
         const res  = await fetch('/api/satta/live', { cache: 'no-store', signal: controller.signal });
         const json = (await res.json()) as { status: string; data?: SattaGame[] };
-        if (json.status === 'success' && json.data) {
-          if (alive) { setGames(json.data); setGamesLoading(false); }
+        if (json.status === 'success' && json.data && alive) {
+          setGames(json.data);
+          setGamesLoading(false);
         }
-      } catch { /* keep previous data on timeout */ }
+      } catch { /* keep previous on timeout */ }
       finally { window.clearTimeout(timer); }
     };
     fetch$();
@@ -110,17 +189,17 @@ export default function SattaMatkaPanalChart() {
     return () => { alive = false; window.clearInterval(id); };
   }, []);
 
-  /* fetch LAXMI DAY latest result — polls every 60s */
+  /* Laxmi Day latest */
   useEffect(() => {
     let alive = true;
     const fetch$ = async () => {
       const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 8000);
+      const timer = window.setTimeout(() => controller.abort(), 8_000);
       try {
         const res  = await fetch('/api/laxmi-day/latest', { cache: 'no-store', signal: controller.signal });
         const json = (await res.json()) as LaxmiLatest;
         if (json.status === 'success' && json.data && alive) setLaxmiGame(json.data);
-      } catch { /* keep previous on error */ }
+      } catch { /* keep previous */ }
       finally { window.clearTimeout(timer); }
     };
     fetch$();
@@ -128,17 +207,17 @@ export default function SattaMatkaPanalChart() {
     return () => { alive = false; window.clearInterval(id); };
   }, []);
 
-  /* fetch LAXMI NIGHT latest result — polls every 60s */
+  /* Laxmi Night latest */
   useEffect(() => {
     let alive = true;
     const fetch$ = async () => {
       const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 8000);
+      const timer = window.setTimeout(() => controller.abort(), 8_000);
       try {
         const res  = await fetch('/api/laxmi-night/latest', { cache: 'no-store', signal: controller.signal });
         const json = (await res.json()) as LaxmiLatest;
         if (json.status === 'success' && json.data && alive) setLaxmiNightGame(json.data);
-      } catch { /* keep previous on error */ }
+      } catch { /* keep previous */ }
       finally { window.clearTimeout(timer); }
     };
     fetch$();
@@ -146,9 +225,10 @@ export default function SattaMatkaPanalChart() {
     return () => { alive = false; window.clearInterval(id); };
   }, []);
 
-  /* pick headline: prefer a game with today's result, else use any game with yesterday */
-  const headlineGame = games.find((g) => hasToday(g)) ?? games.find((g) => g.yesterday_result?.number !== null && g.yesterday_result?.number !== undefined);
+  /* headline = market that is running right now (by clock), falling back to most-recently-closed */
+  const headlineGame   = useMemo(() => pickHeadline(games, laxmiGame, laxmiNightGame, nowMins), [games, laxmiGame, laxmiNightGame, nowMins]);
   const headlineResult = headlineGame ? getResult(headlineGame) : '***';
+  const headlineStatus = headlineGame ? gameStatus(headlineGame.time, nowMins) : null;
 
   const scrollToTop = () => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
@@ -214,8 +294,26 @@ export default function SattaMatkaPanalChart() {
         <div style={{ fontStyle: 'italic', fontSize: '15px', marginBottom: '6px' }}>Sabse Tezz Live Result Yahi Milega</div>
         {headlineGame ? (
           <>
-            <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic' }}>{headlineGame.name}</div>
-            <div style={{ color: C.purple, fontWeight: 'bold', fontSize: '26px', fontStyle: 'italic', margin: '4px 0' }}>{headlineResult}</div>
+            {/* Status badge */}
+            <div style={{ marginBottom: '6px' }}>
+              {headlineStatus === 'running' && (
+                <span style={{ backgroundColor: '#00aa00', color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 10px', borderRadius: '20px', letterSpacing: '1px' }}>
+                  ● RUNNING NOW
+                </span>
+              )}
+              {headlineStatus === 'completed' && (
+                <span style={{ backgroundColor: C.navy, color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 10px', borderRadius: '20px', letterSpacing: '1px' }}>
+                  ✓ COMPLETED
+                </span>
+              )}
+              {headlineStatus === 'upcoming' && (
+                <span style={{ backgroundColor: C.darkRed, color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 10px', borderRadius: '20px', letterSpacing: '1px' }}>
+                  ◷ UPCOMING
+                </span>
+              )}
+            </div>
+            <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '22px', fontStyle: 'italic' }}>{headlineGame.name}</div>
+            <div style={{ color: C.purple, fontWeight: 'bold', fontSize: '28px', fontStyle: 'italic', margin: '4px 0', letterSpacing: '2px' }}>{headlineResult}</div>
             <div style={{ fontSize: '13px', color: '#555', fontStyle: 'italic' }}>{headlineGame.time}</div>
           </>
         ) : (
@@ -275,17 +373,21 @@ export default function SattaMatkaPanalChart() {
 
         {/* LAXMI DAY row — always shown first */}
         {laxmiGame && (() => {
-          const result = getResult(laxmiGame);
-          const isHighlight = hasToday(laxmiGame);
+          const result    = getResult(laxmiGame);
+          const isRunning = gameStatus(laxmiGame.time, nowMins) === 'running';
+          const rowBg     = isRunning ? '#ccffcc' : hasToday(laxmiGame) ? C.yellow : C.peach;
           return (
-            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: isHighlight ? C.yellow : C.peach, borderBottom: `1px solid ${C.red}`, padding: '10px 8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: rowBg, borderBottom: `1px solid ${C.red}`, padding: '10px 8px', borderLeft: isRunning ? '4px solid #00aa00' : undefined }}>
               <div style={{ width: '68px', flexShrink: 0 }}>
                 <Link href="/jodi/laxmi-day">
                   <button style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 12px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>Jodi</button>
                 </Link>
               </div>
               <div style={{ flex: 1, textAlign: 'center', padding: '0 6px' }}>
-                <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '17px', fontStyle: 'italic' }}>{laxmiGame.name}</div>
+                <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '17px', fontStyle: 'italic' }}>
+                  {laxmiGame.name}
+                  {isRunning && <span style={{ marginLeft: '6px', fontSize: '10px', backgroundColor: '#00aa00', color: '#fff', padding: '1px 6px', borderRadius: '10px', verticalAlign: 'middle' }}>LIVE</span>}
+                </div>
                 <div style={{ color: C.purple, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic' }}>{result}</div>
                 <div style={{ fontSize: '12px', color: '#444', fontStyle: 'italic' }}>{laxmiGame.time}</div>
               </div>
@@ -300,17 +402,21 @@ export default function SattaMatkaPanalChart() {
 
         {/* LAXMI NIGHT row */}
         {laxmiNightGame && (() => {
-          const result = getResult(laxmiNightGame);
-          const isHighlight = hasToday(laxmiNightGame);
+          const result    = getResult(laxmiNightGame);
+          const isRunning = gameStatus(laxmiNightGame.time, nowMins) === 'running';
+          const rowBg     = isRunning ? '#ccffcc' : hasToday(laxmiNightGame) ? C.yellow : C.peach;
           return (
-            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: isHighlight ? C.yellow : C.peach, borderBottom: `1px solid ${C.red}`, padding: '10px 8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: rowBg, borderBottom: `1px solid ${C.red}`, padding: '10px 8px', borderLeft: isRunning ? '4px solid #00aa00' : undefined }}>
               <div style={{ width: '68px', flexShrink: 0 }}>
                 <Link href="/jodi/laxmi-night">
                   <button style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 12px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>Jodi</button>
                 </Link>
               </div>
               <div style={{ flex: 1, textAlign: 'center', padding: '0 6px' }}>
-                <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '17px', fontStyle: 'italic' }}>{laxmiNightGame.name}</div>
+                <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '17px', fontStyle: 'italic' }}>
+                  {laxmiNightGame.name}
+                  {isRunning && <span style={{ marginLeft: '6px', fontSize: '10px', backgroundColor: '#00aa00', color: '#fff', padding: '1px 6px', borderRadius: '10px', verticalAlign: 'middle' }}>LIVE</span>}
+                </div>
                 <div style={{ color: C.purple, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic' }}>{result}</div>
                 <div style={{ fontSize: '12px', color: '#444', fontStyle: 'italic' }}>{laxmiNightGame.time}</div>
               </div>
@@ -329,24 +435,30 @@ export default function SattaMatkaPanalChart() {
           </div>
         ) : (
           games.map((game, i) => {
-            const result = getResult(game);
-            const isHighlight = hasToday(game);
+            const result  = getResult(game);
+            const status  = gameStatus(game.time, nowMins);
+            const isRunning = status === 'running';
+            const rowBg   = isRunning ? '#ccffcc' : hasToday(game) ? C.yellow : C.peach;
             return (
               <div
                 key={game.id}
                 style={{
                   display: 'flex', alignItems: 'center',
-                  backgroundColor: isHighlight ? C.yellow : C.peach,
+                  backgroundColor: rowBg,
                   borderBottom: i < games.length - 1 ? `1px solid ${C.red}` : 'none',
                   padding: '10px 8px',
+                  borderLeft: isRunning ? '4px solid #00aa00' : undefined,
                 }}
               >
                 <div style={{ width: '68px', flexShrink: 0 }}>
                   <JodiBtn gameId={game.id} />
                 </div>
                 <div style={{ flex: 1, textAlign: 'center', padding: '0 6px' }}>
-                  <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '17px', fontStyle: 'italic' }}>{game.name}</div>
-                  <div style={{ color: C.purple, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic' }}>{result}</div>
+                  <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '17px', fontStyle: 'italic' }}>
+                    {game.name}
+                    {isRunning && <span style={{ marginLeft: '6px', fontSize: '10px', backgroundColor: '#00aa00', color: '#fff', padding: '1px 6px', borderRadius: '10px', verticalAlign: 'middle' }}>LIVE</span>}
+                  </div>
+                  <div style={{ color: C.purple, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic', letterSpacing: '1px' }}>{result}</div>
                   <div style={{ fontSize: '12px', color: '#444', fontStyle: 'italic' }}>{game.time}</div>
                 </div>
                 <div style={{ width: '68px', textAlign: 'right', flexShrink: 0 }}>

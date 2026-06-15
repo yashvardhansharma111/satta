@@ -26,23 +26,33 @@ export async function GET() {
       return raw === 0 ? 6 : raw - 1;
     }
 
-    function getJodi(row: typeof todayRow, date: Date): string | null {
-      if (!row) return null;
+    function getResult(row: typeof todayRow, date: Date) {
+      if (!row) return { number: null, open: null, close: null };
       const cell = row.cells[dayIndex(date)];
-      if (!cell) return null;
+      if (!cell) return { number: null, open: null, close: null };
       const v = cell.main.trim();
-      if (v === '**' || v === '*' || v === '') return null;
-      return v.padStart(2, '0');
+      if (v === '**' || v === '*' || v === '') return { number: null, open: null, close: null };
+      const isDigit = (d: string) => /^\d$/.test(d.trim());
+      const topOk = cell.topDigits.every(isDigit);
+      const botOk = cell.bottomDigits.every(isDigit);
+      return {
+        number: v.padStart(2, '0'),
+        open:   topOk ? cell.topDigits.join('') : null,
+        close:  botOk ? cell.bottomDigits.join('') : null,
+      };
     }
+
+    const todayRes = getResult(todayRow,  todayUTC);
+    const yestRes  = getResult(yestRow,   yesterday);
 
     return NextResponse.json({
       status: 'success',
       data: {
-        id:               'laxmi-night',
-        name:             'LAXMI NIGHT',
-        time:             gameTime,
-        today_result:     { number: getJodi(todayRow,  todayUTC),  date: todayUTC.toISOString().slice(0, 10) },
-        yesterday_result: { number: getJodi(yestRow,   yesterday), date: yesterday.toISOString().slice(0, 10) },
+        id:   'laxmi-night',
+        name: 'LAXMI NIGHT',
+        time: gameTime,
+        today_result:     { ...todayRes, date: todayUTC.toISOString().slice(0, 10) },
+        yesterday_result: { ...yestRes,  date: yesterday.toISOString().slice(0, 10) },
       },
     });
   } catch (e) {

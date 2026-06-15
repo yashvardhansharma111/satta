@@ -4,7 +4,6 @@ import { connectToMongo } from '@/lib/mongodb';
 import { ChartRowModel } from '@/models/ChartRow';
 import { GameSettingsModel } from '@/models/GameSettings';
 
-/* Returns today's and yesterday's jodi for LAXMI DAY, matching the SattaGame shape used on home page */
 export async function GET() {
   try {
     await connectToMongo();
@@ -15,41 +14,36 @@ export async function GET() {
     yesterday.setUTCDate(todayUTC.getUTCDate() - 1);
 
     const [todayRow, yestRow, settings] = await Promise.all([
-      ChartRowModel.findOne({
-        gameId:    'LAXMI_DAY',
-        startDate: { $lte: todayUTC },
-        endDate:   { $gte: todayUTC },
-      }).lean(),
-      ChartRowModel.findOne({
-        gameId:    'LAXMI_DAY',
-        startDate: { $lte: yesterday },
-        endDate:   { $gte: yesterday },
-      }).lean(),
+      ChartRowModel.findOne({ gameId: 'LAXMI_DAY', startDate: { $lte: todayUTC }, endDate: { $gte: todayUTC } }).lean(),
+      ChartRowModel.findOne({ gameId: 'LAXMI_DAY', startDate: { $lte: yesterday }, endDate: { $gte: yesterday } }).lean(),
       GameSettingsModel.findOne({ gameId: 'LAXMI_DAY' }).lean(),
     ]);
 
     const gameTime = settings?.time ?? '11:15 AM - 2:15 PM';
 
     function dayIndex(d: Date): number {
-      // 0=Mon…6=Sun
-      const raw = d.getUTCDay(); // 0=Sun…6=Sat
+      const raw = d.getUTCDay();
       return raw === 0 ? 6 : raw - 1;
     }
 
-    function getJodi(row: typeof todayRow, date: Date): string | null {
-      if (!row) return null;
-      const idx  = dayIndex(date);
-      const cell = row.cells[idx];
-      if (!cell) return null;
+    function getResult(row: typeof todayRow, date: Date) {
+      if (!row) return { number: null, open: null, close: null };
+      const cell = row.cells[dayIndex(date)];
+      if (!cell) return { number: null, open: null, close: null };
       const v = cell.main.trim();
-      if (v === '**' || v === '*' || v === '') return null;
-      return v.padStart(2, '0');
+      if (v === '**' || v === '*' || v === '') return { number: null, open: null, close: null };
+      const isDigit = (d: string) => /^\d$/.test(d.trim());
+      const topOk = cell.topDigits.every(isDigit);
+      const botOk = cell.bottomDigits.every(isDigit);
+      return {
+        number: v.padStart(2, '0'),
+        open:   topOk ? cell.topDigits.join('') : null,
+        close:  botOk ? cell.bottomDigits.join('') : null,
+      };
     }
 
-    const todayJodi  = getJodi(todayRow,  todayUTC);
-    const yestJodi   = getJodi(yestRow,   yesterday);
-    const todayDate  = todayUTC.toISOString().slice(0, 10);
-    const yestDate   = yesterday.toISOString().slice(0, 10);
+    const todayRes = getResult(todayRow,  todayUTC);
+    const yestRes  = getResult(yestRow,   yesterday);
 
     return NextResponse.json({
       status: 'success',
@@ -57,8 +51,8 @@ export async function GET() {
         id:   'laxmi-day',
         name: 'LAXMI DAY',
         time: gameTime,
-        today_result:     { number: todayJodi,  date: todayDate },
-        yesterday_result: { number: yestJodi,   date: yestDate },
+        today_result:     { ...todayRes, date: todayUTC.toISOString().slice(0, 10) },
+        yesterday_result: { ...yestRes,  date: yesterday.toISOString().slice(0, 10) },
       },
     });
   } catch (e) {
