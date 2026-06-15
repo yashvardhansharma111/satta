@@ -478,7 +478,6 @@ export default function SattaMatkaPanalChart() {
         <div style={{ fontSize: '13px', marginTop: '4px', color: '#333' }}>ALL RIGHTS RESERVED (2012-2026)</div>
         <div style={{ fontSize: '13px', color: '#333' }}>SITE OWNER: <strong>PRO. BIG BOSS SIR</strong></div>
         <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '17px', margin: '6px 0 2px' }}>📞 9425894347</div>
-        <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '17px', margin: '2px 0' }}>📞 9604221222</div>
         <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '17px', margin: '2px 0' }}>📞 8446225281</div>
         <div style={{ color: '#555', fontSize: '12px', marginTop: '6px' }}>https://sattamatkadpboss.co</div>
       </div>
