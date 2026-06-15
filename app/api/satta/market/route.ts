@@ -1,24 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_KEY = '18pcw7mkx91z';
+const API_KEY = 'test_key_2d';
+const BASE    = 'https://api.codehap.com/dp/';
+
+type DpMarketsResponse = { success: boolean; data?: unknown };
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const date = searchParams.get('date') ?? '';
-  const ids = searchParams.get('ids') ?? '';
-
-  if (!date || !ids) {
-    return NextResponse.json({ status: 'error', message: 'date and ids are required' }, { status: 400 });
-  }
+  const sort  = searchParams.get('sort')  ?? '';
+  const order = searchParams.get('order') ?? '';
 
   try {
-    const res = await fetch(
-      `https://api.codehap.com/satta/market/?key=${API_KEY}&date=${date}&ids=${ids}`,
-      { cache: 'no-store' }
-    );
-    const data = await res.json();
-    return NextResponse.json(data);
+    let url = `${BASE}?key=${API_KEY}&type=markets`;
+    if (sort)  url += `&short=${sort}`;
+    if (order) url += `&order=${order}`;
+
+    const res  = await fetch(url, { cache: 'no-store' });
+    const json = (await res.json()) as DpMarketsResponse;
+
+    if (!json.success) {
+      return NextResponse.json({ status: 'error', message: 'API error' }, { status: 502 });
+    }
+
+    return NextResponse.json({ status: 'success', data: json.data });
   } catch {
-    return NextResponse.json({ status: 'error', message: 'Failed to fetch market data' }, { status: 500 });
+    return NextResponse.json({ status: 'error', message: 'Failed to fetch markets' }, { status: 500 });
   }
 }

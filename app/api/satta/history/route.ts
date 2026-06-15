@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_KEY = '18pcw7mkx91z';
+const API_KEY = 'test_key_2d';
+const BASE    = 'https://api.codehap.com/dp/';
 
-/* Fetches every month from `from` (MM-YYYY) to today in parallel, merges results */
+type DpHistoryResponse = {
+  success: boolean;
+  history?: Array<{ result_date: string; number_main: string | null }>;
+};
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const gameId  = (searchParams.get('id') ?? '').toUpperCase();
+  const gameId  = searchParams.get('id') ?? '';
   const fromStr = searchParams.get('from') ?? '01-2023'; // MM-YYYY
 
   if (!gameId) {
@@ -20,7 +25,6 @@ export async function GET(req: NextRequest) {
   const toYear  = now.getFullYear();
   const toMonth = now.getMonth() + 1;
 
-  /* Build list of all months in range */
   const months: { m: number; y: number }[] = [];
   let cy = fromYear, cm = fromMonth;
   while (cy < toYear || (cy === toYear && cm <= toMonth)) {
@@ -29,27 +33,26 @@ export async function GET(req: NextRequest) {
     if (cm > 12) { cm = 1; cy++; }
   }
 
-  /* Fetch all months in parallel from external API */
   const results = await Promise.allSettled(
     months.map(async ({ m, y }) => {
-      const dateStr = `${String(m).padStart(2, '0')}-${y}`;
+      const monthStr = `${y}-${String(m).padStart(2, '0')}`;
       const res = await fetch(
-        `https://api.codehap.com/satta/market/?key=${API_KEY}&date=${dateStr}&ids=${gameId}`,
+        `${BASE}?key=${API_KEY}&type=history&id=${gameId}&month=${monthStr}`,
         { next: { revalidate: 300 } }
       );
-      return res.json() as Promise<{ status: string; data?: Record<string, Record<string, string | null>> }>;
+      return res.json() as Promise<DpHistoryResponse>;
     })
   );
 
-  /* Merge into a flat { "YYYY-MM-DD": value } map */
   const merged: Record<string, string | null> = {};
   for (const result of results) {
     if (result.status !== 'fulfilled') continue;
     const json = result.value;
-    if (json.status !== 'success' || !json.data) continue;
-    for (const [date, vals] of Object.entries(json.data)) {
-      const v = vals[gameId] ?? null;
-      if (v !== null && v !== undefined) merged[date] = v;
+    if (!json.success || !json.history) continue;
+    for (const entry of json.history) {
+      if (entry.number_main != null) {
+        merged[entry.result_date] = entry.number_main;
+      }
     }
   }
 
