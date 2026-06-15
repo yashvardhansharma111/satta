@@ -4,6 +4,8 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 
 /* ── types ── */
+type LuckyNumbers = { golden: string; finalAnk: string[] };
+
 type ResultEntry = {
   number: string | null;
   open?:  string | null;
@@ -224,10 +226,31 @@ export default function SattaMatkaPanalChart() {
     return () => { alive = false; window.clearInterval(id); };
   }, []);
 
-  /* headline = market that is running right now (by clock), falling back to most-recently-closed */
+  /* all currently running markets */
+  const liveMarketsNow = useMemo(() => {
+    const all = [
+      ...(laxmiGame      ? [laxmiGame]      : []),
+      ...(laxmiNightGame ? [laxmiNightGame] : []),
+      ...games,
+    ];
+    return all.filter((g) => gameStatus(g.time, nowMins) === 'running');
+  }, [games, laxmiGame, laxmiNightGame, nowMins]);
+
+  /* fallback headline when nothing is running */
   const headlineGame   = useMemo(() => pickHeadline(games, laxmiGame, laxmiNightGame, nowMins), [games, laxmiGame, laxmiNightGame, nowMins]);
   const headlineResult = headlineGame ? getResult(headlineGame) : '***';
   const headlineStatus = headlineGame ? gameStatus(headlineGame.time, nowMins) : null;
+
+  /* golden ank / final ank from admin */
+  const [luckyNumbers, setLuckyNumbers] = useState<LuckyNumbers>({ golden: '1-6-0-5', finalAnk: ['TIME BAZAR - 2', 'MILAN DAY - 0'] });
+  useEffect(() => {
+    fetch('/api/site-settings?key=lucky_numbers')
+      .then((r) => r.json())
+      .then((d: { value?: string | null }) => {
+        if (d.value) setLuckyNumbers(JSON.parse(d.value) as LuckyNumbers);
+      })
+      .catch(() => {});
+  }, []);
 
   const scrollToTop = () => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
@@ -265,12 +288,13 @@ export default function SattaMatkaPanalChart() {
         <div style={{ display: 'flex', backgroundColor: C.peach }}>
           <div style={{ flex: 1, padding: '14px', textAlign: 'center', borderRight: `1px solid ${C.red}` }}>
             <div style={{ color: C.navy, fontWeight: 'bold', fontStyle: 'italic', fontSize: '15px' }}>Golden Ank</div>
-            <div style={{ color: C.navy, fontWeight: 'bold', fontStyle: 'italic', fontSize: '26px' }}>1-6-0-5</div>
+            <div style={{ color: C.navy, fontWeight: 'bold', fontStyle: 'italic', fontSize: '26px' }}>{luckyNumbers.golden}</div>
           </div>
           <div style={{ flex: 1, padding: '14px', textAlign: 'center' }}>
             <div style={{ color: C.navy, fontWeight: 'bold', fontStyle: 'italic', fontSize: '15px' }}>Final Ank</div>
-            <div style={{ color: C.navy, fontStyle: 'italic', fontSize: '14px', marginTop: '4px' }}>TIME BAZAR - 2</div>
-            <div style={{ color: C.navy, fontStyle: 'italic', fontSize: '14px' }}>MILAN DAY - 0</div>
+            {luckyNumbers.finalAnk.map((line, i) => (
+              <div key={i} style={{ color: C.navy, fontStyle: 'italic', fontSize: '14px', marginTop: i === 0 ? '4px' : '0' }}>{line}</div>
+            ))}
           </div>
         </div>
       </div>
@@ -290,38 +314,45 @@ export default function SattaMatkaPanalChart() {
 
       {/* ── HEADLINE LIVE RESULT ── */}
       <div style={{ ...sec, padding: '14px', textAlign: 'center' }}>
-        <div style={{ fontStyle: 'italic', fontSize: '15px', marginBottom: '6px' }}>Sabse Tezz Live Result Yahi Milega</div>
-        {headlineGame ? (
-          <>
-            {/* Status badge */}
+        <div style={{ fontStyle: 'italic', fontSize: '15px', marginBottom: '10px' }}>Sabse Tezz Live Result Yahi Milega</div>
+
+        {liveMarketsNow.length > 0 ? (
+          /* ── All currently running markets ── */
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', marginBottom: '10px' }}>
+            {liveMarketsNow.map((game) => (
+              <div key={game.id} style={{
+                flex: '1 1 160px', maxWidth: '220px',
+                border: '2px solid #00aa00', borderRadius: '10px',
+                padding: '10px 8px', background: '#f0fff0', textAlign: 'center',
+              }}>
+                <span style={{ backgroundColor: '#00aa00', color: '#fff', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '20px', letterSpacing: '1px' }}>● LIVE</span>
+                <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '15px', fontStyle: 'italic', marginTop: '6px' }}>{game.name}</div>
+                <div style={{ color: C.purple, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic', letterSpacing: '1px' }}>{getResult(game)}</div>
+                <div style={{ fontSize: '11px', color: '#555', fontStyle: 'italic' }}>{game.time}</div>
+              </div>
+            ))}
+          </div>
+        ) : headlineGame ? (
+          /* ── Fallback: most recently closed / upcoming ── */
+          <div style={{ marginBottom: '10px' }}>
             <div style={{ marginBottom: '6px' }}>
-              {headlineStatus === 'running' && (
-                <span style={{ backgroundColor: '#00aa00', color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 10px', borderRadius: '20px', letterSpacing: '1px' }}>
-                  ● RUNNING NOW
-                </span>
-              )}
               {headlineStatus === 'completed' && (
-                <span style={{ backgroundColor: C.navy, color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 10px', borderRadius: '20px', letterSpacing: '1px' }}>
-                  ✓ COMPLETED
-                </span>
+                <span style={{ backgroundColor: C.navy, color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 10px', borderRadius: '20px', letterSpacing: '1px' }}>✓ COMPLETED</span>
               )}
               {headlineStatus === 'upcoming' && (
-                <span style={{ backgroundColor: C.darkRed, color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 10px', borderRadius: '20px', letterSpacing: '1px' }}>
-                  ◷ UPCOMING
-                </span>
+                <span style={{ backgroundColor: C.darkRed, color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 10px', borderRadius: '20px', letterSpacing: '1px' }}>◷ UPCOMING</span>
               )}
             </div>
             <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '22px', fontStyle: 'italic' }}>{headlineGame.name}</div>
             <div style={{ color: C.purple, fontWeight: 'bold', fontSize: '28px', fontStyle: 'italic', margin: '4px 0', letterSpacing: '2px' }}>{headlineResult}</div>
             <div style={{ fontSize: '13px', color: '#555', fontStyle: 'italic' }}>{headlineGame.time}</div>
-          </>
+          </div>
         ) : (
-          <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic' }}>Loading...</div>
+          <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic', marginBottom: '10px' }}>Loading...</div>
         )}
-        <button
-          onClick={() => window.location.reload()}
-          style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 16px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', margin: '8px 4px 0' }}
-        >
+
+        <button onClick={() => window.location.reload()}
+          style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 16px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', margin: '0 4px' }}>
           Refresh
         </button>
         <div style={{ fontStyle: 'italic', fontSize: '15px', fontWeight: 'bold', marginTop: '10px' }}>सबसे तेज सबसे सही</div>

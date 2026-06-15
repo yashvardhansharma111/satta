@@ -389,6 +389,10 @@ export default function AdminPage() {
   const [toasts,       setToasts]       = useState<Toast[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  /* Lucky Numbers */
+  const [goldenAnk,  setGoldenAnk]  = useState('');
+  const [finalAnk,   setFinalAnk]   = useState(['', '']);
+
   function toast(msg: string, type: Toast['type'] = 'info') {
     const id = ++_toastId;
     setToasts(t => [...t, { id, msg, type }]);
@@ -396,6 +400,20 @@ export default function AdminPage() {
   }
 
   useEffect(() => { if (sessionStorage.getItem('admin_authed') === '1') setAuthed(true); }, []);
+
+  useEffect(() => {
+    if (!authed) return;
+    fetch('/api/site-settings?key=lucky_numbers')
+      .then((r) => r.json())
+      .then((d: { value?: string | null }) => {
+        if (d.value) {
+          const parsed = JSON.parse(d.value) as { golden: string; finalAnk: string[] };
+          setGoldenAnk(parsed.golden ?? '');
+          setFinalAnk([parsed.finalAnk?.[0] ?? '', parsed.finalAnk?.[1] ?? '']);
+        }
+      })
+      .catch(() => {});
+  }, [authed]);
 
   useEffect(() => {
     if (!authed) return;
@@ -447,6 +465,21 @@ export default function AdminPage() {
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? 'Failed');
       toast(`Bulk upload complete — ${rows.length} rows`, 'success');
+    } catch (e) { toast(e instanceof Error ? e.message : 'Error', 'error'); }
+    finally { setBusy(false); }
+  }
+
+  async function saveLuckyNumbers() {
+    setBusy(true);
+    try {
+      const value = JSON.stringify({ golden: goldenAnk, finalAnk: finalAnk.filter(Boolean) });
+      const res   = await fetch('/api/site-settings', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ key: 'lucky_numbers', value }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok) throw new Error(data.error ?? 'Failed');
+      toast('Lucky numbers saved ✓', 'success');
     } catch (e) { toast(e instanceof Error ? e.message : 'Error', 'error'); }
     finally { setBusy(false); }
   }
@@ -633,6 +666,26 @@ export default function AdminPage() {
               <GhostBtn onClick={() => fileRef.current?.click()} disabled={busy}>📂 Choose File</GhostBtn>
               <GhostBtn onClick={() => downloadText(`${selectedGame.slug}-panel.csv`, examplePanel)} disabled={busy}>↓ Panel Template</GhostBtn>
               <GhostBtn onClick={() => downloadText(`${selectedGame.slug}-jodi.csv`, exampleJodi)} disabled={busy}>↓ Jodi Template</GhostBtn>
+            </div>
+          </Card>
+
+          {/* ── Golden Ank / Final Ank ── */}
+          <Card>
+            <SectionTitle icon="✨" title="Golden Ank & Final Ank" subtitle="Shown in the Today Lucky Number section on the home page" />
+            <div style={{ display: 'grid', gap: '14px' }}>
+              <div>
+                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Golden Ank</div>
+                <TextInput value={goldenAnk} onChange={setGoldenAnk} placeholder="e.g. 1-6-0-5" style={{ width: '100%', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Final Ank — Line 1</div>
+                <TextInput value={finalAnk[0] ?? ''} onChange={(v) => setFinalAnk(([, b]) => [v, b ?? ''])} placeholder="e.g. TIME BAZAR - 2" style={{ width: '100%', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Final Ank — Line 2</div>
+                <TextInput value={finalAnk[1] ?? ''} onChange={(v) => setFinalAnk(([a]) => [a ?? '', v])} placeholder="e.g. MILAN DAY - 0" style={{ width: '100%', boxSizing: 'border-box' }} />
+              </div>
+              <PrimaryBtn onClick={() => void saveLuckyNumbers()} disabled={busy}>Save Lucky Numbers</PrimaryBtn>
             </div>
           </Card>
 
