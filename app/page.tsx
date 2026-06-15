@@ -115,11 +115,10 @@ function hasToday(game: { today_result?: ResultEntry | null }): boolean {
 function getResult(game: SattaGame): string {
   const r = game.today_result ?? game.yesterday_result;
   if (!r || r.number == null) return '***';
-  const main = String(r.number).padStart(2, '0');
-  if (r.open && r.close) return `${r.open}-${main}-${r.close}`;
-  if (r.open)            return `${r.open}-${main}-***`;
-  if (r.close)           return `***-${main}-${r.close}`;
-  return main;
+  const main  = String(r.number).padStart(2, '0');
+  const open  = r.open  ?? '***';
+  const close = r.close ?? '***';
+  return `${open}-${main}-${close}`;
 }
 
 /* ── shared button components ── */
