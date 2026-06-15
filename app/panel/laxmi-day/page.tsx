@@ -53,7 +53,10 @@ export default function LaxmiDayPanelPage() {
       .then((json: { rows?: ApiRow[]; error?: string }) => {
         if (!alive) return;
         if (!json.rows) throw new Error(json.error ?? 'Failed');
-        setWeeks(json.rows.map((r) => ({
+        const panelRows = json.rows.filter((r) =>
+          r.cells.some((c) => c.topDigits.some((d) => d !== '*' && d !== '**'))
+        );
+        setWeeks(panelRows.map((r) => ({
           startLabel: fmtDate(r.startDate),
           endLabel:   fmtDate(r.endDate),
           cells:      r.cells,

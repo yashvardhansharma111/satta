@@ -38,7 +38,10 @@ export default function LaxmiNightPanelPage() {
       .then((json: { rows?: ApiRow[]; error?: string }) => {
         if (!alive) return;
         if (!json.rows) throw new Error(json.error ?? 'Failed');
-        setWeeks(json.rows.map((r) => ({ startLabel: fmtDate(r.startDate), endLabel: fmtDate(r.endDate), cells: r.cells })));
+        const panelRows = json.rows.filter((r) =>
+          r.cells.some((c) => c.topDigits.some((d) => d !== '*' && d !== '**'))
+        );
+        setWeeks(panelRows.map((r) => ({ startLabel: fmtDate(r.startDate), endLabel: fmtDate(r.endDate), cells: r.cells })));
       })
       .catch((e) => { if (alive) setError(e instanceof Error ? e.message : 'Failed to load'); })
       .finally(() => { clearTimeout(timer); if (alive) setLoading(false); });
