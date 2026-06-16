@@ -5,7 +5,7 @@ const BASE    = 'https://api.codehap.com/dp/';
 
 type DpHistoryResponse = {
   success: boolean;
-  history?: Array<{ result_date: string; number_main: string | null }>;
+  history?: Array<{ result_date: string; number_main: string | null; number_open?: string | null; number_close?: string | null }>;
 };
 
 export async function GET(req: NextRequest) {
@@ -44,14 +44,18 @@ export async function GET(req: NextRequest) {
     })
   );
 
-  const merged: Record<string, string | null> = {};
+  const merged: Record<string, { main: string; open: string | null; close: string | null }> = {};
   for (const result of results) {
     if (result.status !== 'fulfilled') continue;
     const json = result.value;
     if (!json.success || !json.history) continue;
     for (const entry of json.history) {
       if (entry.number_main != null) {
-        merged[entry.result_date] = entry.number_main;
+        merged[entry.result_date] = {
+          main:  entry.number_main,
+          open:  entry.number_open  ?? null,
+          close: entry.number_close ?? null,
+        };
       }
     }
   }

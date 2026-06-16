@@ -30,7 +30,7 @@ function isDouble(v: string | null | undefined): boolean {
   return s[0] === s[1];
 }
 
-function groupByWeek(flat: Record<string, string | null>): WeekRow[] {
+function groupByWeek(flat: Record<string, { main: string; open: string | null; close: string | null }>): WeekRow[] {
   const map = new Map<string, WeekRow>();
   const sorted = Object.entries(flat).sort(([a], [b]) => a.localeCompare(b));
   for (const [dateStr, val] of sorted) {
@@ -41,7 +41,7 @@ function groupByWeek(flat: Record<string, string | null>): WeekRow[] {
     monday.setUTCDate(d.getUTCDate() - monIdx);
     const key = monday.toISOString().slice(0, 10);
     if (!map.has(key)) map.set(key, { key, days: Array(7).fill(null) });
-    map.get(key)!.days[monIdx] = val;
+    map.get(key)!.days[monIdx] = val.main;
   }
   return [...map.values()];
 }
@@ -73,7 +73,7 @@ export default function JodiChartPage() {
     const timer = setTimeout(() => ctrl.abort(), 30_000);
     fetch(`/api/satta/history?id=${gameId}&from=01-2023`, { cache: 'no-store', signal: ctrl.signal })
       .then((r) => r.json())
-      .then((json: { status: string; data?: Record<string, string | null>; message?: string }) => {
+      .then((json: { status: string; data?: Record<string, { main: string; open: string | null; close: string | null }>; message?: string }) => {
         if (json.status !== 'success' || !json.data) throw new Error(json.message ?? 'Failed');
         if (alive) setWeeks(groupByWeek(json.data));
       })
