@@ -89,6 +89,21 @@ function gameStatus(timeStr: string, nowMins: number): 'running' | 'completed' |
 }
 
 
+/* ── Allowed markets (in display order) ── */
+const ALLOWED_MARKET_IDS = [
+  '42',  // MADHUR DAY
+  '43',  // MADHUR NIGHT
+  '3',   // SRIDEVI
+  '22',  // SRIDEVI NIGHT
+  '12',  // TIME BAZAR
+  '105', // TIME NIGHT
+  '17',  // MILAN DAY
+  '27',  // MILAN NIGHT
+  '21',  // KALYAN
+  '34',  // KALYAN NIGHT
+  '29',  // MAIN BAZAR
+];
+
 /* ── colour palette ── */
 const C = {
   peach:   '#FFCBA4',
@@ -179,7 +194,10 @@ export default function SattaMatkaPanalChart() {
         const res  = await fetch('/api/satta/live', { cache: 'no-store', signal: controller.signal });
         const json = (await res.json()) as { status: string; data?: SattaGame[] };
         if (json.status === 'success' && json.data && alive) {
-          setGames(json.data);
+          const filtered = ALLOWED_MARKET_IDS
+            .map((id) => json.data!.find((g) => g.id === id))
+            .filter((g): g is SattaGame => g !== undefined);
+          setGames(filtered);
           setGamesLoading(false);
         }
       } catch { /* keep previous on timeout */ }
@@ -476,7 +494,7 @@ export default function SattaMatkaPanalChart() {
             Loading live results...
           </div>
         ) : (
-          games.map((game, i) => {
+          games.map((game) => {
             const result  = getResult(game);
             const status  = gameStatus(game.time, nowMins);
             const isRunning = status === 'running';
@@ -487,7 +505,7 @@ export default function SattaMatkaPanalChart() {
                 style={{
                   display: 'flex', alignItems: 'center',
                   backgroundColor: rowBg,
-                  borderBottom: i < games.length - 1 ? `1px solid ${C.red}` : 'none',
+                  borderBottom: `1px solid ${C.red}`,
                   padding: '10px 8px',
                   borderLeft: isRunning ? '4px solid #00aa00' : undefined,
                 }}
