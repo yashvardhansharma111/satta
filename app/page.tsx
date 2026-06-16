@@ -313,49 +313,61 @@ export default function SattaMatkaPanalChart() {
       </div>
 
       {/* ── HEADLINE LIVE RESULT ── */}
-      <div style={{ ...sec, padding: '14px', textAlign: 'center' }}>
-        <div style={{ fontStyle: 'italic', fontSize: '15px', marginBottom: '10px' }}>Sabse Tezz Live Result Yahi Milega</div>
+      <div style={{ ...sec }}>
+        <div style={{ textAlign: 'center', padding: '10px 8px 6px', fontStyle: 'italic', fontSize: '15px' }}>
+          Sabse Tezz Live Result Yahi Milega
+        </div>
 
+        {/* Rows — same table style as market list */}
         {liveMarketsNow.length > 0 ? (
-          /* ── All currently running markets ── */
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', marginBottom: '10px' }}>
-            {liveMarketsNow.map((game) => (
-              <div key={game.id} style={{
-                flex: '1 1 160px', maxWidth: '220px',
-                border: '2px solid #00aa00', borderRadius: '10px',
-                padding: '10px 8px', background: '#f0fff0', textAlign: 'center',
-              }}>
-                <span style={{ backgroundColor: '#00aa00', color: '#fff', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '20px', letterSpacing: '1px' }}>● LIVE</span>
-                <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '15px', fontStyle: 'italic', marginTop: '6px' }}>{game.name}</div>
-                <div style={{ color: C.purple, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic', letterSpacing: '1px' }}>{getResult(game)}</div>
-                <div style={{ fontSize: '11px', color: '#555', fontStyle: 'italic' }}>{game.time}</div>
-              </div>
-            ))}
-          </div>
-        ) : headlineGame ? (
-          /* ── Fallback: most recently closed / upcoming ── */
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ marginBottom: '6px' }}>
-              {headlineStatus === 'completed' && (
-                <span style={{ backgroundColor: C.navy, color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 10px', borderRadius: '20px', letterSpacing: '1px' }}>✓ COMPLETED</span>
-              )}
-              {headlineStatus === 'upcoming' && (
-                <span style={{ backgroundColor: C.darkRed, color: '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 10px', borderRadius: '20px', letterSpacing: '1px' }}>◷ UPCOMING</span>
-              )}
+          liveMarketsNow.map((game, i) => (
+            <div key={game.id} style={{
+              textAlign: 'center', padding: '12px 8px',
+              borderTop: `1px solid ${C.red}`,
+              backgroundColor: '#ccffcc',
+            }}>
+              <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic' }}>{game.name}</div>
+              <div style={{ color: C.purple, fontWeight: 'bold', fontSize: '26px', fontStyle: 'italic', letterSpacing: '2px', margin: '4px 0' }}>{getResult(game)}</div>
+              <button onClick={() => window.location.reload()}
+                style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 16px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
+                Refresh
+              </button>
             </div>
-            <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '22px', fontStyle: 'italic' }}>{headlineGame.name}</div>
-            <div style={{ color: C.purple, fontWeight: 'bold', fontSize: '28px', fontStyle: 'italic', margin: '4px 0', letterSpacing: '2px' }}>{headlineResult}</div>
-            <div style={{ fontSize: '13px', color: '#555', fontStyle: 'italic' }}>{headlineGame.time}</div>
+          ))
+        ) : headlineGame ? (
+          <div style={{
+            textAlign: 'center', padding: '12px 8px',
+            borderTop: `1px solid ${C.red}`,
+            backgroundColor: headlineStatus === 'running' ? '#ccffcc' : C.peach,
+          }}>
+            <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic' }}>{headlineGame.name}</div>
+            <div style={{ color: headlineStatus === 'running' ? '#009900' : C.purple, fontWeight: 'bold', fontSize: '26px', fontStyle: 'italic', letterSpacing: '2px', margin: '4px 0' }}>
+              {headlineResult === '***' ? 'Loading...' : headlineResult}
+            </div>
+            <button onClick={() => window.location.reload()}
+              style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 16px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
+              Refresh
+            </button>
           </div>
         ) : (
-          <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic', marginBottom: '10px' }}>Loading...</div>
+          <div style={{ textAlign: 'center', padding: '12px 8px', borderTop: `1px solid ${C.red}` }}>
+            <div style={{ color: C.navy, fontWeight: 'bold', fontSize: '20px', fontStyle: 'italic' }}>Loading...</div>
+            <button onClick={() => window.location.reload()}
+              style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 16px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px' }}>
+              Refresh
+            </button>
+          </div>
         )}
 
-        <button onClick={() => window.location.reload()}
-          style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 16px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', margin: '0 4px' }}>
-          Refresh
-        </button>
-        <div style={{ fontStyle: 'italic', fontSize: '15px', fontWeight: 'bold', marginTop: '10px' }}>सबसे तेज सबसे सही</div>
+        <div style={{ textAlign: 'center', padding: '10px 8px', borderTop: `1px solid ${C.red}`, fontStyle: 'italic', fontSize: '15px', fontWeight: 'bold' }}>
+          खबर लाइन चालू है
+        </div>
+        <div style={{ textAlign: 'center', paddingBottom: '12px' }}>
+          <button onClick={() => window.location.reload()}
+            style={{ backgroundColor: C.btn, color: C.white, border: 'none', borderRadius: '8px', padding: '5px 16px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* ── HINDI PROMO ── */}

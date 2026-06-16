@@ -85,23 +85,26 @@ export async function GET(req: Request) {
     await connectToMongo();
 
     const { searchParams } = new URL(req.url);
-    const limit  = Math.min(Number(searchParams.get('limit') ?? '200'), 2000);
-    const skip   = Math.max(Number(searchParams.get('skip') ?? '0'), 0);
-    const sort   = searchParams.get('sort') === 'asc' ? 1 : -1;
-    const gameId = searchParams.get('gameId') ?? 'LAXMI_DAY';
-
-    // year/month filtering for chart pages
-    const year  = searchParams.get('year');
-    const month = searchParams.get('month');
+    const limit    = Math.min(Number(searchParams.get('limit') ?? '200'), 2000);
+    const skip     = Math.max(Number(searchParams.get('skip') ?? '0'), 0);
+    const sort     = searchParams.get('sort') === 'asc' ? 1 : -1;
+    const gameId   = searchParams.get('gameId') ?? 'LAXMI_DAY';
+    const fromDate = searchParams.get('fromDate');
+    const toDate   = searchParams.get('toDate');
+    const year     = searchParams.get('year');
+    const month    = searchParams.get('month');
 
     const filter: Record<string, unknown> = { gameId };
+
     if (year && month) {
-      const y = Number(year);
-      const m = Number(month);
-      const from = new Date(Date.UTC(y, m - 1, 1));
-      const to   = new Date(Date.UTC(y, m, 1));
-      filter.startDate = { $lt: to };
-      filter.endDate   = { $gte: from };
+      const y = Number(year), m = Number(month);
+      filter.startDate = { $lt: new Date(Date.UTC(y, m, 1)) };
+      filter.endDate   = { $gte: new Date(Date.UTC(y, m - 1, 1)) };
+    } else if (fromDate || toDate) {
+      const sd: Record<string, Date> = {};
+      if (fromDate) sd['$gte'] = parseDate(fromDate);
+      if (toDate)   sd['$lte'] = parseDate(toDate);
+      filter.startDate = sd;
     }
 
     const rows = await ChartRowModel.find(filter)
@@ -116,6 +119,18 @@ export async function GET(req: Request) {
     const stack   = e instanceof Error ? e.stack : undefined;
     console.error('[chart-rows GET] ERROR:', message, stack);
     return NextResponse.json({ error: message, stack }, { status: 400 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    await connectToMongo();
+    const { gameId, startDate, endDate } = (await req.json()) as { gameId: string; startDate: string; endDate: string };
+    if (!gameId || !startDate || !endDate) return NextResponse.json({ error: 'gameId, startDate, endDate required' }, { status: 400 });
+    const result = await ChartRowModel.deleteOne({ gameId, startDate: parseDate(startDate), endDate: parseDate(endDate) });
+    return NextResponse.json({ ok: true, deleted: result.deletedCount });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
 }
 

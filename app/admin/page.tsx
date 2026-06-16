@@ -393,6 +393,14 @@ export default function AdminPage() {
   const [goldenAnk,  setGoldenAnk]  = useState('');
   const [finalAnk,   setFinalAnk]   = useState(['', '']);
 
+  /* Manage Rows */
+  type MgmtRow = { startDate: string; endDate: string; cells: CellInput[] };
+  const [mgmtFrom,    setMgmtFrom]    = useState('');
+  const [mgmtTo,      setMgmtTo]      = useState('');
+  const [mgmtRows,    setMgmtRows]    = useState<MgmtRow[]>([]);
+  const [mgmtLoading, setMgmtLoading] = useState(false);
+  const [editingRow,  setEditingRow]  = useState<MgmtRow | null>(null);
+
   function toast(msg: string, type: Toast['type'] = 'info') {
     const id = ++_toastId;
     setToasts(t => [...t, { id, msg, type }]);
@@ -465,6 +473,53 @@ export default function AdminPage() {
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? 'Failed');
       toast(`Bulk upload complete — ${rows.length} rows`, 'success');
+    } catch (e) { toast(e instanceof Error ? e.message : 'Error', 'error'); }
+    finally { setBusy(false); }
+  }
+
+  async function searchMgmtRows() {
+    setMgmtLoading(true); setEditingRow(null); setMgmtRows([]);
+    try {
+      const params = new URLSearchParams({ gameId: selectedGame.id, sort: 'asc', limit: '500' });
+      if (mgmtFrom) params.set('fromDate', mgmtFrom);
+      if (mgmtTo)   params.set('toDate',   mgmtTo);
+      const res  = await fetch(`/api/chart-rows?${params.toString()}`);
+      const json = (await res.json()) as { rows?: MgmtRow[] };
+      setMgmtRows(json.rows ?? []);
+      if (!json.rows?.length) toast('No rows found for that date range', 'info');
+    } catch (e) { toast(e instanceof Error ? e.message : 'Error', 'error'); }
+    finally { setMgmtLoading(false); }
+  }
+
+  async function deleteMgmtRow(r: MgmtRow) {
+    if (!confirm(`Delete row ${r.startDate.slice(0,10)} → ${r.endDate.slice(0,10)}?`)) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/chart-rows', {
+        method: 'DELETE', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ gameId: selectedGame.id, startDate: r.startDate, endDate: r.endDate }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok) throw new Error(data.error ?? 'Failed');
+      setMgmtRows(prev => prev.filter(x => x.startDate !== r.startDate || x.endDate !== r.endDate));
+      if (editingRow?.startDate === r.startDate) setEditingRow(null);
+      toast('Row deleted ✓', 'success');
+    } catch (e) { toast(e instanceof Error ? e.message : 'Error', 'error'); }
+    finally { setBusy(false); }
+  }
+
+  async function saveMgmtEdit() {
+    if (!editingRow) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/chart-rows', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ gameId: selectedGame.id, startDate: editingRow.startDate, endDate: editingRow.endDate, cells: editingRow.cells }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? 'Failed');
+      setMgmtRows(prev => prev.map(x => (x.startDate === editingRow.startDate && x.endDate === editingRow.endDate ? editingRow : x)));
+      toast('Row updated ✓', 'success');
     } catch (e) { toast(e instanceof Error ? e.message : 'Error', 'error'); }
     finally { setBusy(false); }
   }
@@ -687,6 +742,97 @@ export default function AdminPage() {
               </div>
               <PrimaryBtn onClick={() => void saveLuckyNumbers()} disabled={busy}>Save Lucky Numbers</PrimaryBtn>
             </div>
+          </Card>
+
+          {/* ── Manage Chart Rows ── */}
+          <Card>
+            <SectionTitle icon="🗂️" title="Manage Chart Rows" subtitle="Search by date range, edit or delete individual rows" />
+
+            {/* Search controls */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '12px', alignItems: 'flex-end', marginBottom: '20px', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>From Date</div>
+                <TextInput value={mgmtFrom} onChange={setMgmtFrom} placeholder="02/06/2025 or 2025-06-02" style={{ width: '100%', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>To Date</div>
+                <TextInput value={mgmtTo} onChange={setMgmtTo} placeholder="30/06/2025 or 2025-06-30" style={{ width: '100%', boxSizing: 'border-box' }} />
+              </div>
+              <PrimaryBtn onClick={() => void searchMgmtRows()} disabled={mgmtLoading}>
+                {mgmtLoading ? 'Searching…' : '🔍 Search'}
+              </PrimaryBtn>
+            </div>
+
+            {/* Results list */}
+            {mgmtRows.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: editingRow ? '20px' : '0' }}>
+                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', marginBottom: '4px' }}>{mgmtRows.length} row(s) found</div>
+                {mgmtRows.map((r) => {
+                  const isEditing = editingRow?.startDate === r.startDate && editingRow?.endDate === r.endDate;
+                  const start = r.startDate ? new Date(r.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }) : r.startDate;
+                  const end   = r.endDate   ? new Date(r.endDate).toLocaleDateString('en-GB',   { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }) : r.endDate;
+                  return (
+                    <div key={`${r.startDate}-${r.endDate}`} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '12px 14px', borderRadius: '10px',
+                      background: isEditing ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.03)',
+                      border: `1px solid ${isEditing ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.07)'}`,
+                      flexWrap: 'wrap', gap: '10px',
+                    }}>
+                      <div>
+                        <span style={{ color: '#fff', fontWeight: 600, fontSize: '14px' }}>{start}</span>
+                        <span style={{ color: 'rgba(255,255,255,0.3)', margin: '0 8px' }}>→</span>
+                        <span style={{ color: '#fff', fontWeight: 600, fontSize: '14px' }}>{end}</span>
+                        <span style={{ marginLeft: '10px', color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>
+                          {r.cells.filter(c => c.main !== '**' && c.main !== '*').length}/7 cells
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={() => setEditingRow(isEditing ? null : { ...r, cells: r.cells.map(c => ({ ...c })) })}
+                          style={{
+                            padding: '6px 14px', borderRadius: '7px', border: '1px solid rgba(99,102,241,0.4)',
+                            background: isEditing ? 'rgba(99,102,241,0.3)' : 'rgba(99,102,241,0.1)',
+                            color: '#a5b4fc', fontWeight: 600, fontSize: '12px', cursor: 'pointer',
+                          }}>
+                          {isEditing ? 'Cancel' : '✏️ Edit'}
+                        </button>
+                        <button onClick={() => void deleteMgmtRow(r)} disabled={busy}
+                          style={{
+                            padding: '6px 14px', borderRadius: '7px', border: '1px solid rgba(239,68,68,0.3)',
+                            background: 'rgba(239,68,68,0.08)', color: '#f87171',
+                            fontWeight: 600, fontSize: '12px', cursor: busy ? 'not-allowed' : 'pointer',
+                          }}>
+                          🗑️ Delete
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Inline edit form */}
+            {editingRow && (
+              <div style={{ marginTop: '16px', padding: '20px', borderRadius: '12px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)' }}>
+                <div style={{ color: '#a5b4fc', fontWeight: 700, fontSize: '13px', marginBottom: '16px' }}>
+                  ✏️ Editing: {new Date(editingRow.startDate).toLocaleDateString('en-GB', { timeZone: 'UTC' })} → {new Date(editingRow.endDate).toLocaleDateString('en-GB', { timeZone: 'UTC' })}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+                  {editingRow.cells.map((c, idx) => (
+                    <CellEditor key={idx} cell={c} idx={idx} mode={entryMode}
+                      onChange={updated => setEditingRow(prev => {
+                        if (!prev) return prev;
+                        const next = [...prev.cells]; next[idx] = updated;
+                        return { ...prev, cells: next };
+                      })} />
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <PrimaryBtn onClick={() => void saveMgmtEdit()} disabled={busy}>💾 Save Changes</PrimaryBtn>
+                  <GhostBtn onClick={() => setEditingRow(null)} disabled={busy}>Cancel</GhostBtn>
+                </div>
+              </div>
+            )}
           </Card>
 
           {/* ── Seed Historical Data ── */}
