@@ -91,6 +91,7 @@ function gameStatus(timeStr: string, nowMins: number): 'running' | 'completed' |
 
 /* ── Allowed markets (in display order) ── */
 const ALLOWED_MARKET_IDS = [
+  '41',  // MADHUR MORNING
   '42',  // MADHUR DAY
   '43',  // MADHUR NIGHT
   '3',   // SRIDEVI
@@ -132,9 +133,10 @@ function hasToday(game: { today_result?: ResultEntry | null }): boolean {
 function getResult(game: SattaGame): string {
   const r = game.today_result ?? game.yesterday_result;
   if (!r || r.number == null) return '***';
-  const main  = String(r.number).padStart(2, '0');
   const open  = r.open  ?? '***';
   const close = r.close ?? '***';
+  // Only pad jodi to 2 digits when both sides are known
+  const main  = close === '***' ? String(r.number) : String(r.number).padStart(2, '0');
   return `${open}-${main}-${close}`;
 }
 
@@ -338,7 +340,7 @@ export default function SattaMatkaPanalChart() {
 
         {/* Rows — same table style as market list */}
         {liveMarketsNow.length > 0 ? (
-          liveMarketsNow.map((game, i) => (
+          liveMarketsNow.map((game) => (
             <div key={game.id} style={{
               textAlign: 'center', padding: '12px 8px',
               borderTop: `1px solid ${C.red}`,
