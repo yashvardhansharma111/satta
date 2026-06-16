@@ -135,8 +135,8 @@ function getResult(game: SattaGame): string {
   if (!r || r.number == null) return '***';
   const open  = r.open  ?? '***';
   const close = r.close ?? '***';
-  // Only pad jodi to 2 digits when both sides are known
-  const main  = close === '***' ? String(r.number) : String(r.number).padStart(2, '0');
+  // When close is unknown show single open digit (strip leading zero); pad to 2 only when both sides known
+  const main  = close === '***' ? String(Number(r.number)) : String(r.number).padStart(2, '0');
   return `${open}-${main}-${close}`;
 }
 
