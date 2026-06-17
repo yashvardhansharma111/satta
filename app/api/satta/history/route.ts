@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_KEY = 'test_key_2d';
+const API_KEY = 'hl4w92ky5tp';
 const BASE    = 'https://api.codehap.com/dp/';
 
 type DpHistoryResponse = {
