@@ -199,7 +199,26 @@ export default function SattaMatkaPanalChart() {
           const filtered = ALLOWED_MARKET_IDS
             .map((id) => json.data!.find((g) => g.id === id))
             .filter((g): g is SattaGame => g !== undefined);
-          setGames(filtered);
+
+          // Persist any non-null results to localStorage as overnight fallback
+          filtered.forEach((g) => {
+            if (g.today_result?.number != null) {
+              localStorage.setItem(`last_result_${g.id}`, JSON.stringify(g.today_result));
+            }
+          });
+
+          // For markets with no result at all, load the last known result from localStorage
+          const withFallback = filtered.map((g) => {
+            if (g.today_result == null && g.yesterday_result == null) {
+              try {
+                const stored = localStorage.getItem(`last_result_${g.id}`);
+                if (stored) return { ...g, yesterday_result: JSON.parse(stored) as typeof g.today_result };
+              } catch { /* ignore parse errors */ }
+            }
+            return g;
+          });
+
+          setGames(withFallback);
           setGamesLoading(false);
         }
       } catch { /* keep previous on timeout */ }
