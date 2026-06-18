@@ -51,8 +51,8 @@ export async function GET() {
         id:   'laxmi-day',
         name: 'LAXMI DAY',
         time: gameTime,
-        today_result:     { ...todayRes, date: todayUTC.toISOString().slice(0, 10) },
-        yesterday_result: { ...yestRes,  date: yesterday.toISOString().slice(0, 10) },
+        today_result:     todayRes.number != null ? { ...todayRes, date: todayUTC.toISOString().slice(0, 10) } : null,
+        yesterday_result: yestRes.number  != null ? { ...yestRes,  date: yesterday.toISOString().slice(0, 10) } : null,
       },
     });
   } catch (e) {
