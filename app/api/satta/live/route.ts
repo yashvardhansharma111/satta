@@ -35,18 +35,29 @@ export async function GET() {
       return NextResponse.json({ status: 'error', message: 'API error' }, { status: 502 });
     }
 
-    const data = json.data.map((g) => ({
-      id:   String(g.id),
-      name: g.game_name,
-      time: `${formatTime(g.open_time)} - ${formatTime(g.close_time)}`,
-      today_result: g.number_main != null ? {
+    // Today's date in IST (UTC+5:30) — game dates use IST
+    const istNow = new Date(Date.now() + 5.5 * 3600 * 1000);
+    const todayIST = istNow.toISOString().slice(0, 10);
+
+    const data = json.data.map((g) => {
+      const resultDate = g.result_date ?? '';
+      const isToday    = resultDate === todayIST;
+
+      const entry = g.number_main != null ? {
         number: String(g.number_main).padStart(2, '0'),
         open:   g.number_open  ?? null,
         close:  g.number_close ?? null,
-        date:   g.result_date ?? g.updated_at ?? '',
-      } : null,
-      yesterday_result: null,
-    }));
+        date:   resultDate,
+      } : null;
+
+      return {
+        id:   String(g.id),
+        name: g.game_name,
+        time: `${formatTime(g.open_time)} - ${formatTime(g.close_time)}`,
+        today_result:     isToday ? entry : null,
+        yesterday_result: !isToday ? entry : null,
+      };
+    });
 
     return NextResponse.json({ status: 'success', data });
   } catch {
