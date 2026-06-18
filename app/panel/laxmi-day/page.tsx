@@ -117,7 +117,7 @@ export default function LaxmiDayPanelPage() {
               {/* Title row */}
               <tr>
                 <th colSpan={8} style={{ backgroundColor: C.indigo, color: C.white, fontWeight: 'bold', fontSize: '20px', padding: '12px 20px', textAlign: 'center', letterSpacing: '1px' }}>
-                  SRILAXMI DAY PANEL CHART
+                  LAXMI DAY PANEL CHART
                 </th>
               </tr>
               {/* Day header row */}
